@@ -1,7 +1,7 @@
 import sys
 import os
 
-# Agregar el directorio padre al path para poder importar los módulos
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PyQt5.QtWidgets import QApplication

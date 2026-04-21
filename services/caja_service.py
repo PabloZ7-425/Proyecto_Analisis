@@ -1,6 +1,12 @@
-# Servicio para manejar operaciones de caja y autenticación
-# Por ahora sin conexión a BD
+# Servicio de caja y autenticación — conectado a Supabase PostgreSQL
+# Tablas: usuario (sin s), caja, apertura_cierre (con id_caja_fk)
 
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from database.conexion import DatabaseConnection
 from models.usuario import Usuario
 
 
@@ -8,89 +14,110 @@ class CajaService:
     """Servicio para manejar la caja y autenticación"""
 
     def __init__(self):
-        # Datos de prueba (simulando base de datos)
-        self.usuarios_prueba = [
+        self.db = DatabaseConnection()
+
+    # ──────────────────────────────────────────────────────────────
+    def obtener_usuarios_activos(self):
+        """
+        Obtiene usuarios activos desde la tabla 'usuario'.
+        Retorna lista de dicts: id_usuario, nombre, usuario, rol.
+        """
+        query = """
+            SELECT id_usuario, nombre, usuario, rol
+            FROM   usuario
+            WHERE  estado = TRUE
+            ORDER  BY nombre
+        """
+        rows = self.db.fetch_all(query)
+        return [
             {
-                'id_usuario': 1,
-                'nombre': 'Administrador',
-                'usuario': 'admin',
-                'password': 'admin123',
-                'rol': 'ADMIN',
-                'estado': True
-            },
-            {
-                'id_usuario': 2,
-                'nombre': 'Cajero Principal',
-                'usuario': 'cajero1',
-                'password': 'caja123',
-                'rol': 'CAJERO',
-                'estado': True
-            },
-            {
-                'id_usuario': 3,
-                'nombre': 'Cajero Secundario',
-                'usuario': 'cajero2',
-                'password': 'caja456',
-                'rol': 'CAJERO',
-                'estado': True
-            },
-            {
-                'id_usuario': 4,
-                'nombre': 'Usuario Inactivo',
-                'usuario': 'inactivo',
-                'password': 'test123',
-                'rol': 'CAJERO',
-                'estado': False
+                'id_usuario': row['id_usuario'],
+                'nombre':     row['nombre'],
+                'usuario':    row['usuario'],
+                'rol':        row['rol'],
             }
+            for row in rows
         ]
 
-    def obtener_usuarios_activos(self):
-        """Obtiene la lista de usuarios activos"""
-        usuarios_activos = []
-        for user_data in self.usuarios_prueba:
-            if user_data['estado']:
-                usuario = Usuario.from_dict(user_data)
-                usuarios_activos.append({
-                    'id_usuario': usuario.id_usuario,
-                    'nombre': usuario.nombre,
-                    'usuario': usuario.usuario,
-                    'rol': usuario.rol
-                })
-        return usuarios_activos
-
+    # ──────────────────────────────────────────────────────────────
     def autenticar_usuario(self, id_usuario, password):
         """
-        Autentica un usuario por ID y contraseña
-        Retorna: (success, mensaje, usuario_dict)
+        Autentica por id_usuario y contraseña.
+        Retorna: (success: bool, mensaje: str, usuario_dict | None)
         """
-        # Buscar usuario por ID
-        user_data = None
-        for user in self.usuarios_prueba:
-            if user['id_usuario'] == id_usuario:
-                user_data = user
-                break
+        query = """
+            SELECT id_usuario, nombre, usuario, password, rol, estado, fecha_creacion
+            FROM   usuario
+            WHERE  id_usuario = %s
+        """
+        row = self.db.fetch_one(query, (id_usuario,))
 
-        if not user_data:
+        if not row:
             return False, "Usuario no encontrado", None
 
-        # Verificar estado
-        if not user_data['estado']:
+        if not row['estado']:
             return False, "Usuario desactivado, contacte al administrador", None
 
-        # Crear objeto usuario y verificar contraseña
-        usuario = Usuario.from_dict(user_data)
+        usuario = Usuario.from_dict(dict(row))
 
         if not usuario.verificar_password(password):
             return False, "Contraseña incorrecta", None
 
-        # Autenticación exitosa
         return True, "Bienvenido", usuario.to_dict()
 
+    # ──────────────────────────────────────────────────────────────
     def registrar_apertura_caja(self, id_usuario, monto_inicial):
         """
-        Registra la apertura de caja cuando un usuario inicia sesión
+        Abre la caja:
+          1) Inserta en 'caja' (fecha de hoy) → obtiene id_caja.
+          2) Inserta en 'apertura_cierre' vinculando id_caja e id_usuario.
+        Retorna id_apertura (int) o None si falló.
         """
-        # Placeholder para cuando implementemos la BD
-        # Esto creará un registro en apertura_cierre
-        print(f"Apertura de caja para usuario {id_usuario} con monto {monto_inicial}")
-        return True
+        # Paso 1 — crear registro de caja del día
+        caja_row = self.db.fetch_one(
+            "INSERT INTO caja (fecha) VALUES (CURRENT_DATE) RETURNING id_caja"
+        )
+        if not caja_row:
+            print("❌ No se pudo crear registro en tabla 'caja'")
+            return None
+
+        id_caja = caja_row['id_caja']
+
+        # Paso 2 — registrar apertura
+        apertura_row = self.db.fetch_one(
+            """
+            INSERT INTO apertura_cierre
+                (id_caja_fk, id_usuario_fk, fecha_hora_apertura, monto_inicial)
+            VALUES (%s, %s, NOW(), %s)
+            RETURNING id_apertura
+            """,
+            (id_caja, id_usuario, monto_inicial)
+        )
+        if not apertura_row:
+            print("❌ No se pudo registrar apertura de caja")
+            return None
+
+        id_apertura = apertura_row['id_apertura']
+        print(f"✅ Apertura registrada — id_apertura={id_apertura}, id_caja={id_caja}")
+        return id_apertura
+
+    # ──────────────────────────────────────────────────────────────
+    def registrar_cierre_caja(self, id_apertura, monto_final):
+        """
+        Cierra la caja actualizando fecha_hora_cierre y monto_final.
+        Retorna True si tuvo éxito.
+        """
+        ok = self.db.execute_query(
+            """
+            UPDATE apertura_cierre
+            SET    fecha_hora_cierre = NOW(),
+                   monto_final       = %s
+            WHERE  id_apertura = %s
+            """,
+            (monto_final, id_apertura)
+        )
+        if ok:
+            print(f"✅ Cierre registrado — id_apertura={id_apertura}")
+        else:
+            print("❌ No se pudo registrar el cierre de caja")
+        return ok
