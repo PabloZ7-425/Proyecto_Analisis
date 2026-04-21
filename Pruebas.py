@@ -1,141 +1,112 @@
-import random
+import psycopg2
+import secrets
 import string
+from config.db_config import DatabaseConfig 
 
-class Usuario:
-    def __init__(self, nombre, usuario, rol, contraseña):
-        self._nombre = nombre
-        self._usuario = usuario
-        self._rol = rol
-        self._contraseña = contraseña
+# =========================
+# CONEXIÓN A BD
+# =========================
+def getConexion():
+    try:
+        params = DatabaseConfig.get_connection_params()
+        conexion = psycopg2.connect(**params)
+        conexion.set_client_encoding('UTF8')
+        return conexion
+    except Exception as e:
+        print(f"❌ Error de conexión: {e}")
+        return None
 
-    @property
-    def usuario(self):
-        return self._usuario
+# =========================
+# GENERADOR DE CONTRASEÑA
+# =========================
+def generarPassword(longitud=12):
+    caracteres = string.ascii_letters + string.digits + "!@#$%^&*"
+    return ''.join(secrets.choice(caracteres) for _ in range(longitud))
 
-    @property
-    def rol(self):
-        return self._rol
-
-    def validarPassword(self, password):
-        return self._contraseña == password
-
-    def mostrar(self):
-        print(f"Nombre: {self._nombre}")
-        print(f"Usuario: {self._usuario}")
-        print(f"Rol: {self._rol}")
-        print("----------------------")
-
-
-usuarios_db = []
-
-# admin por defecto
-usuarios_db.append(Usuario("Admin", "admin", "administrador", "1234"))
-
-
-def generarPassword(longitud=8):
-    caracteres = string.ascii_letters + string.digits
-    return ''.join(random.choice(caracteres) for _ in range(longitud))
-
-
+# =========================
+# CREAR USUARIO
+# =========================
 def crearUsuario():
-    nombre = input("Ingrese nombre: ")
-    usuario = input("Ingrese usuario: ")
+    nombre = input("Nombre completo: ")
+    usuario = input("Nombre de usuario: ")
+    
+    print("\n¿Desea generar una contraseña automática?")
+    op_pass = input("1. Sí / 2. No: ")
+    password = generarPassword() if op_pass == "1" else input("Ingrese contraseña: ")
+    if op_pass == "1": print(f"🔑 Generada: {password}")
 
-    # validar usuario único
-    for u in usuarios_db:
-        if u.usuario == usuario:
-            print("Ese usuario ya existe")
-            return
+    rol = input("Rol: ")
 
-    rol = input("Ingrese rol (administrador/vendedor): ").lower()
-    if rol not in ["administrador", "vendedor"]:
-        print("Rol inválido")
-        return
+    conexion = getConexion()
+    if conexion:
+        try:
+            cursor = conexion.cursor()
+            # Por defecto se crea en TRUE (Habilitado)
+            cursor.execute("""
+                INSERT INTO usuario (nombre, usuario, password, rol, estado)
+                VALUES (%s, %s, %s, %s, true)
+            """, (nombre, usuario, password, rol))
+            conexion.commit()
+            print(f"\n✅ Usuario '{usuario}' creado y HABILITADO.")
+            cursor.close()
+            conexion.close()
+        except Exception as e:
+            print("❌ Error:", e)
 
-    opcion = input("¿Generar contraseña automática? (s/n): ").lower()
+# =========================
+# ACTIVAR / DESACTIVAR USUARIO
+# =========================
+def gestionarEstadoUsuario():
+    usuario = input("Ingrese el nombre de usuario a gestionar: ")
+    
+    print(f"\n¿Qué desea hacer con el usuario '{usuario}'?")
+    print("1. Habilitar (Set True)")
+    print("2. Deshabilitar (Set False)")
+    op = input("Seleccione: ")
 
-    if opcion == "s":
-        contraseña = generarPassword()
-    else:
-        contraseña = input("Ingrese contraseña: ")
+    nuevo_estado = True if op == "1" else False
+    estado_texto = "HABILITADO" if nuevo_estado else "DESHABILITADO"
 
-    nuevo = Usuario(nombre, usuario, rol, contraseña)
-    usuarios_db.append(nuevo)
+    conexion = getConexion()
+    if conexion:
+        try:
+            cursor = conexion.cursor()
+            # Ejecutamos el UPDATE para cambiar solo el estado
+            cursor.execute("""
+                UPDATE usuario 
+                SET estado = %s 
+                WHERE usuario = %s
+            """, (nuevo_estado, usuario))
+            
+            if cursor.rowcount > 0:
+                conexion.commit()
+                print(f"\n🔄 El usuario '{usuario}' ahora está {estado_texto}.")
+            else:
+                print(f"\n❌ No se encontró el usuario '{usuario}'.")
+            
+            cursor.close()
+            conexion.close()
+        except Exception as e:
+            print("❌ Error al actualizar estado:", e)
 
-    print("\n✅ Usuario creado correctamente")
-    print("⚠️ GUARDA ESTA CONTRASEÑA Y ENTRÉGALA AL USUARIO:")
-    print(f"👉 Usuario: {usuario}")
-    print(f"👉 Contraseña: {contraseña}")
-    print("----------------------")
-
-
-def login():
-    usuario = input("Usuario: ")
-    password = input("Contraseña: ")
-
-    for u in usuarios_db:
-        if u.usuario == usuario and u.validarPassword(password):
-            print(f"Bienvenido {usuario} ({u.rol})")
-            return u
-
-    print("Credenciales incorrectas")
-    return None
-
-
-def mostrarUsuarios():
-    print("\n--- LISTA DE USUARIOS ---")
-    for u in usuarios_db:
-        u.mostrar()
-
-
-def menuAdmin():
+# =========================
+# MENÚ PRINCIPAL
+# =========================
+if __name__ == "__main__":
     while True:
-        print("\n--- MENÚ ADMIN ---")
-        print("1. Crear usuario")
-        print("2. Mostrar usuarios")
-        print("3. Cerrar sesión")
+        print("\n=== GESTIÓN DE USUARIOS SUPABASE ===")
+        print("1. Crear nuevo usuario")
+        print("2. Habilitar/Deshabilitar usuario")
+        print("3. Salir")
 
-        op = input("Seleccione: ")
+        op = input("Seleccione una opción: ")
 
         if op == "1":
             crearUsuario()
         elif op == "2":
-            mostrarUsuarios()
+            gestionarEstadoUsuario()
         elif op == "3":
+            print("Saliendo...")
             break
-
-
-def menuVendedor():
-    while True:
-        print("\n--- MENÚ VENDEDOR ---")
-        print("1. Ver usuarios")
-        print("2. Cerrar sesión")
-
-        op = input("Seleccione: ")
-
-        if op == "1":
-            mostrarUsuarios()
-        elif op == "2":
-            break
-
-
-# PROGRAMA PRINCIPAL
-while True:
-    print("\n=== SISTEMA ===")
-    print("1. Iniciar sesión")
-    print("2. Salir")
-
-    op = input("Seleccione: ")
-
-    if op == "1":
-        usuarioLogueado = login()
-
-        if usuarioLogueado:
-            if usuarioLogueado.rol == "administrador":
-                menuAdmin()
-            else:
-                menuVendedor()
-
-    elif op == "2":
-        print("Saliendo...")
-        break
+        else:
+            print("❌ Opción inválida.")
