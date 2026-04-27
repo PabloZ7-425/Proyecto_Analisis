@@ -4,11 +4,11 @@ class DatabaseConfig:
     """Configuracion de la base de datos Supabase"""
 
     DB_CONFIG = {
-        'host':     'db.tlrershlxqyelcxcqgjc.supabase.co',
-        'port':     5432,
+        'host': 'db.tlrershlxqyelcxcqgjc.supabase.co',
+        'port': 5432,
         'database': 'postgres',
-        'user':     'postgres',
-        'password': 'Techshopgt4321.',
+        'user': 'postgres',
+        'password': 'Techshopgt4321.'
     }
 
     @staticmethod
