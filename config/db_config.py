@@ -1,10 +1,8 @@
-# Configuración de la base de datos
-# Por ahora solo placeholder, sin conexión real
+
 
 class DatabaseConfig:
-    """Configuración de la base de datos"""
+    """Configuracion de la base de datos Supabase"""
 
-    # Datos de conexión (para cuando se implemente)
     DB_CONFIG = {
         'host': 'db.tlrershlxqyelcxcqgjc.supabase.co',
         'port': 5432,
@@ -14,7 +12,17 @@ class DatabaseConfig:
     }
 
     @staticmethod
+    def get_connection_params():
+
+        params = DatabaseConfig.DB_CONFIG.copy()
+        params['sslmode'] = 'require'
+        return params
+
+    @staticmethod
     def get_connection_string():
-        """Retorna el string de conexión"""
-        config = DatabaseConfig.DB_CONFIG
-        return f"host={config['host']} port={config['port']} dbname={config['database']} user={config['user']} password={config['password']}"
+        c = DatabaseConfig.DB_CONFIG
+        return (
+            f"host={c['host']} port={c['port']} "
+            f"dbname={c['database']} user={c['user']} "
+            f"password={c['password']} sslmode=require"
+        )
