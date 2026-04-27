@@ -1,4 +1,3 @@
-
 import sys
 import os
 
@@ -31,10 +30,11 @@ class DatabaseConnection:
             self.cursor = self.connection.cursor(
                 cursor_factory=psycopg2.extras.RealDictCursor
             )
-            print(" Conexión a Supabase establecida.")
+            print("Conexión a Supabase establecida.")
             return True
         except psycopg2.OperationalError as e:
-            print(f" Error al conectar con Supabase: {e}")
+            print(f"Error al conectar con Supabase: {e}")
+            return False
 
     def disconnect(self):
         """Cierra cursor y conexión de forma segura"""
@@ -48,13 +48,11 @@ class DatabaseConnection:
         except Exception as e:
             print(f"Error al cerrar conexión: {e}")
 
-    # ──────────────────────────────────────────────────────────────
     def _ensure_connected(self):
         if self.connection is None or self.connection.closed:
             return self.connect()
         return True
 
-    # ──────────────────────────────────────────────────────────────
     def execute_query(self, query, params=None):
         """INSERT / UPDATE / DELETE. Retorna True si tuvo éxito."""
         if not self._ensure_connected():
@@ -68,21 +66,19 @@ class DatabaseConnection:
             print(f" Error en execute_query: {e}")
             return False
 
-    # ──────────────────────────────────────────────────────────────
     def fetch_one(self, query, params=None):
         """SELECT → un registro (dict) o None."""
         if not self._ensure_connected():
             return None
         try:
             self.cursor.execute(query, params)
-            self.connection.commit()   # libera el estado de transacción
+            self.connection.commit()
             return self.cursor.fetchone()
         except Exception as e:
             self.connection.rollback()
-            print(f" Error en fetch_one: {e}")
+            print(f"Error en fetch_one: {e}")
             return None
 
-    # ──────────────────────────────────────────────────────────────
     def fetch_all(self, query, params=None):
         """SELECT → lista de registros (dicts) o []."""
         if not self._ensure_connected():
@@ -93,10 +89,9 @@ class DatabaseConnection:
             return self.cursor.fetchall()
         except Exception as e:
             self.connection.rollback()
-            print(f" Error en fetch_all: {e}")
+            print(f"Error en fetch_all: {e}")
             return []
 
-    # ──────────────────────────────────────────────────────────────
     def __enter__(self):
         self.connect()
         return self
