@@ -6,11 +6,11 @@ class DatabaseConfig:
 
     # Datos de conexión (para cuando se implemente)
     DB_CONFIG = {
-        'host': 'localhost',
+        'host': 'db.tlrershlxqyelcxcqgjc.supabase.co',
         'port': 5432,
-        'database': 'tec_shop',
+        'database': 'postgres',
         'user': 'postgres',
-        'password': 'password'
+        'password': 'Techshopgt4321.'
     }
 
     @staticmethod
