@@ -4,8 +4,8 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt5.QtWidgets import QApplication, QSplashScreen, QStyleFactory
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QApplication, QStyleFactory
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor, QPalette
 from UI.login_ui import LoginWindow
 
@@ -42,22 +42,9 @@ def main():
     app = QApplication(sys.argv)
     setup_application(app)
 
-    # Splash screen opcional
-    splash = QSplashScreen()
-    splash.setStyleSheet("""
-        QSplashScreen {
-            background-color: #FFFFFF;
-            color: #1A1A1A;
-        }
-    """)
-    splash.showMessage("Cargando TechShop...", Qt.AlignCenter, QColor(26, 26, 26))
-    splash.show()
-
-    # Crear y mostrar ventana de login
+    # Crear y mostrar ventana de login directamente
     login_window = LoginWindow()
-
-    # Pequeña demora para mostrar splash
-    QTimer.singleShot(1500, lambda: [splash.finish(login_window), login_window.show()])
+    login_window.show()
 
     sys.exit(app.exec_())
 

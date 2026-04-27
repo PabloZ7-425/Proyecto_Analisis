@@ -1,7 +1,5 @@
 import psycopg2
 from config.db_config import DatabaseConfig
-# Clase de configuración incluida para evitar el error 'not defined'
-
 
 def getConexion():
     try:
@@ -13,32 +11,36 @@ def getConexion():
         print(f"❌ Error de conexión: {e}")
         return None
 
-# Resto de tus clases (Cliente y Producto) con el método guardar() integrado:
 class Cliente:
-    def __init__(self, nombres, apellidos):
-        self.__nombres = nombres
-        self.__apellidos = apellidos
+    def __init__(self, nombre, apellido, telefono=""):
+        self.__nombre = nombre
+        self.__apellido = apellido
+        self.__telefono = telefono
 
     def guardar(self):
         conexion = getConexion()
         if conexion:
             try:
                 cursor = conexion.cursor()
-                # Asegúrate que el nombre de la tabla sea exactamente igual al de tu BD
-                # Verifica si la tabla es 'clientes' o 'cliente'
-                sql = "INSERT INTO cliente (nombre, apellido) VALUES (%s, %s)"
-                cursor.execute(sql, (self.__nombres, self.__apellidos))
+                sql = "INSERT INTO cliente (nombre, apellido, telefono) VALUES (%s, %s, %s)"
+                cursor.execute(sql, (self.__nombre, self.__apellido, self.__telefono))
                 conexion.commit()
                 print("✅ Cliente guardado.")
                 cursor.close()
                 conexion.close()
+                return True
             except Exception as e:
                 print(f"❌ Error al guardar cliente: {e}")
+                conexion.rollback()
+                return False
+        return False
+
 class Producto:
-    def __init__(self, marca, modelo, nombre_producto, descripcion):
+    # CORREGIDO: El orden ahora es (nombre, marca, modelo, descripcion)
+    def __init__(self, nombre, marca, modelo, descripcion):
+        self.__nombre = nombre
         self.__marca = marca
         self.__modelo = modelo
-        self.__nombre_producto = nombre_producto
         self.__descripcion = descripcion
 
     def guardar(self):
@@ -46,26 +48,33 @@ class Producto:
         if conexion:
             try:
                 cursor = conexion.cursor()
-                # Según tus imágenes, las columnas son: nombre, marca, modelo, descripcion
                 sql = "INSERT INTO producto (nombre, marca, modelo, descripcion) VALUES (%s, %s, %s, %s)"
-                cursor.execute(sql, (self.__nombre_producto, self.__marca, self.__modelo, self.__descripcion))
+                cursor.execute(sql, (self.__nombre, self.__marca, self.__modelo, self.__descripcion))
                 conexion.commit()
                 print("✅ Producto guardado.")
                 cursor.close()
                 conexion.close()
+                return True
             except Exception as e:
                 print(f"❌ Error al guardar producto: {e}")
+                conexion.rollback()
+                return False
+        return False
 
-# Ejecución
-print("--- REGISTRO ---")
-nombre = input("Ingrese nombre: ")
-apellido = input("Ingrese apellido: ")
-cli = Cliente(nombre, apellido)
-cli.guardar()
+# Ejecución de prueba
+if __name__ == "__main__":
+    print("--- REGISTRO ---")
+    nombre = input("Ingrese nombre: ")
+    apellido = input("Ingrese apellido: ")
+    telefono = input("Ingrese teléfono: ")
+    cli = Cliente(nombre, apellido, telefono)
+    cli.guardar()
 
-marca = input("Ingrese marca: ")
-modelo = input("Ingrese modelo: ")
-prod_nombre = input("Ingrese nombre del producto: ")
-desc = input("Ingrese descripción: ")
-prod = Producto(marca, modelo, prod_nombre, desc)
-prod.guardar()
+    print("\n--- REGISTRO DE PRODUCTO ---")
+    prod_nombre = input("Ingrese nombre del producto: ")
+    marca = input("Ingrese marca: ")
+    modelo = input("Ingrese modelo: ")
+    desc = input("Ingrese descripción: ")
+    # CORREGIDO: El orden ahora es (nombre, marca, modelo, descripcion)
+    prod = Producto(prod_nombre, marca, modelo, desc)
+    prod.guardar()
