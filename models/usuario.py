@@ -1,5 +1,4 @@
 class Usuario:
-    """Modelo de Usuario"""
 
     def __init__(self, id_usuario=None, nombre=None, usuario=None,
                  password=None, rol=None, estado=True, fecha_creacion=None):
@@ -24,7 +23,7 @@ class Usuario:
 
     @staticmethod
     def from_dict(data):
-        """Crea un objeto Usuario desde un diccionario"""
+
         return Usuario(
             id_usuario=data.get('id_usuario'),
             nombre=data.get('nombre'),
