@@ -1,55 +1,31 @@
-import psycopg2
-from config.db_config import DatabaseConfig
-
-def getConexion():
-    try:
-        params = DatabaseConfig.get_connection_params()
-        conexion = psycopg2.connect(**params)
-        conexion.set_client_encoding('UTF8')
-        return conexion
-    except Exception as e:
-        print(f"Error de conexión: {e}")
-        return None
-
 class Cliente:
-    def __init__(self, nombre, apellido, telefono=""):
-        self.__nombre = nombre
-        self.__apellido = apellido
-        self.__telefono = telefono
+    def __init__(self, id_cliente=None, nombre=None, apellido=None, telefono=None):
+        self.id_cliente = id_cliente
+        self.nombre = nombre
+        self.apellido = apellido
+        self.telefono = telefono
 
-    def guardar(self):
-        conexion = getConexion()
-        if conexion:
-            try:
-                cursor = conexion.cursor()
-                sql = "INSERT INTO cliente (nombre, apellido, telefono) VALUES (%s, %s, %s)"
-                cursor.execute(sql, (self.__nombre, self.__apellido, self.__telefono))
-                conexion.commit()
-                print("Cliente guardado.")
-                cursor.close()
-                conexion.close()
-                return True
-            except Exception as e:
-                print(f"Error al guardar cliente: {e}")
-                conexion.rollback()
-                return False
-        return False
+    def to_dict(self):
+        return {
+            'id_cliente': self.id_cliente,
+            'nombre': self.nombre,
+            'apellido': self.apellido,
+            'telefono': self.telefono
+        }
 
+    @staticmethod
+    def from_dict(data):
+        return Cliente(
+            id_cliente=data.get('id_cliente'),
+            nombre=data.get('nombre'),
+            apellido=data.get('apellido'),
+            telefono=data.get('telefono')
+        )
 
-""" Ejecución de prueba
-if __name__ == "__main__":
-    print("--- REGISTRO ---")
-    nombre = input("Ingrese nombre: ")
-    apellido = input("Ingrese apellido: ")
-    telefono = input("Ingrese teléfono: ")
-    cli = Cliente(nombre, apellido, telefono)
-    cli.guardar()
+    def nombre_completo(self):
+        if self.apellido:
+            return f"{self.nombre} {self.apellido}"
+        return self.nombre
 
-    print("\n--- REGISTRO DE PRODUCTO ---")
-    prod_nombre = input("Ingrese nombre del producto: ")
-    marca = input("Ingrese marca: ")
-    modelo = input("Ingrese modelo: ")
-    desc = input("Ingrese descripción: ")
-    # CORREGIDO: El orden ahora es (nombre, marca, modelo, descripcion)
-    prod = Producto(prod_nombre, marca, modelo, desc)
-    prod.guardar()"""
+    def __str__(self):
+        return self.nombre_completo()

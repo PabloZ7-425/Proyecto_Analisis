@@ -1,5 +1,4 @@
 class Venta:
-    # Constantes para forma_pago
     FORMA_EFECTIVO = 'EF'
     FORMA_TARJETA = 'TC/TD'
     FORMA_TRANSFERENCIA = 'TF'

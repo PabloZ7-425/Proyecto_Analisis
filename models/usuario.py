@@ -11,7 +11,6 @@ class Usuario:
         self.fecha_creacion = fecha_creacion
 
     def to_dict(self):
-        """Convierte el objeto a diccionario"""
         return {
             'id_usuario': self.id_usuario,
             'nombre': self.nombre,
@@ -23,7 +22,6 @@ class Usuario:
 
     @staticmethod
     def from_dict(data):
-
         return Usuario(
             id_usuario=data.get('id_usuario'),
             nombre=data.get('nombre'),
@@ -35,8 +33,6 @@ class Usuario:
         )
 
     def verificar_password(self, password_input):
-        """Verifica si la contraseña ingresada es correcta"""
-        # Por ahora comparación directa, después se usará hash
         return self.password == password_input
 
     def __str__(self):
