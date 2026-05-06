@@ -54,7 +54,7 @@ class GastoService:
         query = "DELETE FROM public.gasto WHERE id_gasto = %s"
         return self.db.execute_query(query, (id_gasto,))
 
-# --- MENÚ DE PRUEBAS ---
+# --- MENU DE PRUEBAS ---
 if __name__ == "__main__":
     try:
         db = DatabaseConnection()
