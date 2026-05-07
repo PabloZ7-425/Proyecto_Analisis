@@ -286,12 +286,66 @@ class ServiceVenta:
         ventas = self.listar_ventas_dia()
         total_ventas = sum(float(v['total']) for v in ventas) if ventas else 0
 
+        # Calcular desglose por forma de pago
+        ventas_efectivo = sum(float(v['total']) for v in ventas if v['forma_pago'] == 'EF')
+        ventas_tarjeta = sum(float(v['total']) for v in ventas if v['forma_pago'] == 'TC/TD')
+        ventas_transferencia = sum(float(v['total']) for v in ventas if v['forma_pago'] == 'TF')
+        ventas_envio = sum(float(v['total']) for v in ventas if v['es_envio'] == True)
+
         return {
             'fecha': date.today(),
             'total_ventas': total_ventas,
             'cantidad': len(ventas),
+            'desglose': {
+                'efectivo': ventas_efectivo,
+                'tarjeta': ventas_tarjeta,
+                'transferencia': ventas_transferencia,
+                'envio': ventas_envio
+            },
             'ventas': ventas
         }
+
+    def reporte_ventas_mensual(self, anio: int, mes: int) -> list:
+        """Reporte de ventas mensual"""
+        query = """
+            SELECT v.id_venta, v.numero_documento, v.forma_pago, v.total,
+                   v.es_envio, m.fecha_hora,
+                   c.nombre, c.apellido
+            FROM public.venta v
+            JOIN public.movimiento_caja m ON v.id_movimiento_fk = m.id_movimiento
+            JOIN public.cliente c ON v.id_cliente_fk = c.id_cliente
+            WHERE EXTRACT(YEAR FROM m.fecha_hora) = %s 
+              AND EXTRACT(MONTH FROM m.fecha_hora) = %s
+            ORDER BY m.fecha_hora
+        """
+        ventas = self.db.fetch_all(query, (anio, mes)) or []
+        for v in ventas:
+            if v.get('total'):
+                v['total'] = float(v['total'])
+        return ventas
+
+    def listar_cuentas_pendientes(self) -> list:
+        """Lista cuentas por cobrar pendientes"""
+        query = """
+            SELECT id_cuenta, numero_documento, monto, id_venta_fk
+            FROM public.cuenta_por_cobrar 
+            WHERE pagado = false
+            ORDER BY id_cuenta
+        """
+        cuentas = self.db.fetch_all(query) or []
+        for c in cuentas:
+            if c.get('monto'):
+                c['monto'] = float(c['monto'])
+        return cuentas
+
+    def marcar_cuenta_pagada(self, id_cuenta: int) -> dict:
+        """Marca cuenta como pagada"""
+        try:
+            query = "UPDATE public.cuenta_por_cobrar SET pagado = true WHERE id_cuenta = %s"
+            self.db.execute_query(query, (id_cuenta,))
+            return {'success': True, 'message': 'Cuenta marcada como pagada'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error: {str(e)}'}
 
     def listar_empresas_envio(self) -> list:
         query = "SELECT id_empresa, nombre, telefono FROM public.empresa_envio ORDER BY nombre"
@@ -313,12 +367,32 @@ class ServiceVenta:
         return productos
 
 
-
-
 # ==================== MENÚ DE PRUEBA ====================
 
 if __name__ == "__main__":
-    service = ServiceVenta(id_usuario_actual=1)
+    from services.caja_service import CajaService
+
+    print("=" * 50)
+    print("   SISTEMA DE VENTAS - TECH SHOP")
+    print("=" * 50)
+
+    id_usuario = 1
+
+    # Abrir caja si es necesario
+    caja = CajaService()
+    service = ServiceVenta(id_usuario_actual=id_usuario)
+
+    verificacion = service.verificar_caja_abierta()
+    if not verificacion['success']:
+        print("\nAbriendo caja...")
+        resultado_apertura = caja.registrar_apertura_caja(id_usuario, 500.00)
+        if resultado_apertura:
+            print(f"✅ Caja abierta! ID: {resultado_apertura}")
+        else:
+            print("❌ No se pudo abrir la caja")
+            exit()
+    else:
+        print("✅ Caja ya está abierta")
 
     while True:
         print("\n" + "=" * 50)
@@ -346,7 +420,7 @@ if __name__ == "__main__":
                 # Mostrar clientes disponibles
                 clientes = service.listar_clientes()
                 print("\nClientes disponibles:")
-                for c in clientes[:5]:  # Mostrar primeros 5
+                for c in clientes[:5]:
                     print(f"  ID: {c['id_cliente']} - {c.get('nombre', '')} {c.get('apellido', '')}")
 
                 id_cliente = int(input("\nID cliente: "))
@@ -369,7 +443,6 @@ if __name__ == "__main__":
                 while True:
                     print(f"\n--- Producto {len(productos) + 1} ---")
 
-                    # Mostrar productos
                     prods = service.listar_productos()
                     print("\nProductos disponibles:")
                     for p in prods[:5]:
@@ -378,7 +451,8 @@ if __name__ == "__main__":
 
                     id_prod = int(input("\nID producto: "))
                     cantidad = int(input("Cantidad: "))
-                    precio = float(input("Precio unitario: "))
+                    # EL PRECIO SE USA EL DE LA TABLA, NO SE PIDE AL USUARIO
+                    precio = float(service.obtener_producto(id_prod)['precio_costo'])
                     descuento = float(input("Descuento (0 si no): "))
 
                     productos.append({
@@ -419,12 +493,13 @@ if __name__ == "__main__":
                 id_producto = int(input("ID producto: "))
 
                 cantidad = int(input("Cantidad: "))
-                precio = float(input("Precio unitario (Enter para usar precio sugerido): ") or 0)
-
+                # 🔴 ELIMINADO: ya no se pide precio al usuario
+                # precio = float(input("Precio unitario: ") or 0)
                 forma_pago = input("Forma de pago (EF/TC/TD/TF): ").upper()
+                descuento = float(input("Descuento (0 si no): "))
 
                 resultado = service.registrar_venta_rapida(
-                    id_cliente, id_producto, cantidad, forma_pago, precio if precio > 0 else None
+                    id_cliente, id_producto, cantidad, forma_pago, descuento
                 )
                 print(f"\n✅ {resultado['message']}")
 
@@ -452,10 +527,11 @@ if __name__ == "__main__":
                     print(f"\n--- Producto {len(productos) + 1} ---")
                     prods = service.listar_productos()
                     for p in prods[:5]:
-                        print(f"  ID: {p['id_producto']} - {p['nombre']}")
+                        print(f"  ID: {p['id_producto']} - {p['nombre']} (Q{p.get('precio_costo', 0):.2f})")
                     id_prod = int(input("ID producto: "))
                     cantidad = int(input("Cantidad: "))
-                    precio = float(input("Precio unitario: "))
+                    # EL PRECIO SE USA EL DE LA TABLA
+                    precio = float(service.obtener_producto(id_prod)['precio_costo'])
                     descuento = float(input("Descuento: "))
 
                     productos.append({
@@ -530,8 +606,8 @@ if __name__ == "__main__":
                 ventas = service.reporte_ventas_mensual(anio, mes)
                 if ventas:
                     total = sum(float(v['total']) for v in ventas)
-                    print(f"\n {anio}-{mes:02d}: {len(ventas)} ventas, Total: Q{total:.2f}")
-                    for v in ventas[:10]:  # Mostrar primeras 10
+                    print(f"\n📊 {anio}-{mes:02d}: {len(ventas)} ventas, Total: Q{total:.2f}")
+                    for v in ventas[:10]:
                         print(f"   {v['fecha_hora'][:10]} - {v['numero_documento']} - Q{float(v['total']):.2f}")
                 else:
                     print("No hay ventas en ese período")
@@ -574,7 +650,7 @@ if __name__ == "__main__":
                     f"ID: {p['id_producto']} | {p['nombre']} {p.get('marca', '')} {p.get('modelo', '')} | Costo: Q{float(p.get('precio_costo', 0)):.2f}")
 
         elif opcion == "12":
-            print("\n¡Hasta luego!")
+            print("\n👋 ¡Hasta luego!")
             break
 
         else:
