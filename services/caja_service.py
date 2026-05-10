@@ -66,19 +66,42 @@ class CajaService:
         return True, "Bienvenido", usuario.to_dict()
 
     # ──────────────────────────────────────────────────────────────
+    def hay_caja_abierta(self):
+        """
+        Verifica si existe una caja abierta.
+        """
+        query = """
+            SELECT id_apertura
+            FROM apertura_cierre
+            WHERE fecha_hora_cierre IS NULL
+            LIMIT 1
+        """
+
+        row = self.db.fetch_one(query)
+        return row is not None
+
+    # ──────────────────────────────────────────────────────────────
     def registrar_apertura_caja(self, id_usuario, monto_inicial):
         """
         Abre la caja:
-          1) Inserta en 'caja' (fecha de hoy) → obtiene id_caja.
-          2) Inserta en 'apertura_cierre' vinculando id_caja e id_usuario.
+          1) Verifica si ya existe una caja abierta.
+          2) Inserta en 'caja' (fecha de hoy) → obtiene id_caja.
+          3) Inserta en 'apertura_cierre' vinculando id_caja e id_usuario.
         Retorna id_apertura (int) o None si falló.
         """
+
+        # Verificar si ya hay una caja abierta
+        if self.hay_caja_abierta():
+            print("Ya existe una caja abierta. Debe cerrarse antes de abrir otra.")
+            return None
+
         # Paso 1 — crear registro de caja del día
         caja_row = self.db.fetch_one(
             "INSERT INTO caja (fecha) VALUES (CURRENT_DATE) RETURNING id_caja"
         )
+
         if not caja_row:
-            print("❌ No se pudo crear registro en tabla 'caja'")
+            print("No se pudo crear registro en tabla 'caja'")
             return None
 
         id_caja = caja_row['id_caja']
@@ -93,12 +116,15 @@ class CajaService:
             """,
             (id_caja, id_usuario, monto_inicial)
         )
+
         if not apertura_row:
-            print("❌ No se pudo registrar apertura de caja")
+            print("No se pudo registrar apertura de caja")
             return None
 
         id_apertura = apertura_row['id_apertura']
-        print(f"✅ Apertura registrada — id_apertura={id_apertura}, id_caja={id_caja}")
+
+        print(f"Apertura registrada — id_apertura={id_apertura}, id_caja={id_caja}")
+
         return id_apertura
 
     # ──────────────────────────────────────────────────────────────
@@ -116,8 +142,10 @@ class CajaService:
             """,
             (monto_final, id_apertura)
         )
+
         if ok:
-            print(f"✅ Cierre registrado — id_apertura={id_apertura}")
+            print(f"Cierre registrado — id_apertura={id_apertura}")
         else:
-            print("❌ No se pudo registrar el cierre de caja")
+            print("No se pudo registrar el cierre de caja")
+
         return ok
