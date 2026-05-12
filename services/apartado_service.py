@@ -1,130 +1,243 @@
+# services/apartado_service.py
 import sys
 import os
-from datetime import datetime
+from datetime import date, timedelta
 
-# Configuración de rutas para encontrar la conexión (estilo CajaService)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.conexion import DatabaseConnection
+from models.dao import ApartadoDAO, MovimientoCajaDAO
+from models.apartado import Apartado
+from models.movimiento import MovimientoCaja
 
-class ServiceApartado:
-    def __init__(self):
-        self.db = DatabaseConnection()
 
-    def crear_apartado(self, id_cliente, id_producto, monto_original, descuento=0, primer_abono=0):
-        """Registra el apartado inicial en la tabla 'apartado'."""
-        monto_final = monto_original - descuento
-        fecha_inicio = datetime.now().date()
+class ApartadoService:
+    """Servicio para gestionar la lógica de negocio de apartados."""
+
+    def __init__(self, db_connection: DatabaseConnection):
+        self.db = db_connection
+        self.apartado_dao = ApartadoDAO(self.db)
+        self.movimiento_dao = MovimientoCajaDAO(self.db)
+
+    def obtener_apartados_pendientes(self) -> list[dict]:
+        """
+        Obtiene SOLO los apartados ACTIVOS con saldo pendiente por pagar.
+        Retorna una lista de diccionarios con toda la información necesaria.
+        """
+        query = """
+            SELECT a.id_apartado, 
+                   a.total_producto, 
+                   a.monto_original,
+                   a.descuento_pactado,
+                   a.monto_final,
+                   a.fecha_inicio, 
+                   a.estado,
+                   a.es_envio,
+                   a.id_empresa_fk,
+                   c.id_cliente,
+                   c.nombre as cliente_nombre, 
+                   c.apellido as cliente_apellido,
+                   c.telefono as cliente_telefono,
+                   p.id_producto,
+                   p.nombre as producto_nombre, 
+                   p.marca,
+                   p.modelo,
+                   p.precio_costo,
+                   ee.nombre as empresa_envio_nombre,
+                   COALESCE(SUM(da.monto), 0) as total_pagado
+            FROM apartado a
+            JOIN cliente c ON a.id_cliente_fk = c.id_cliente
+            JOIN producto p ON a.id_producto_fk = p.id_producto
+            LEFT JOIN detalle_apartado da ON a.id_apartado = da.id_apartado_fk
+            LEFT JOIN empresa_envio ee ON a.id_empresa_fk = ee.id_empresa
+            WHERE a.estado = 'ACTIVO'
+            GROUP BY a.id_apartado, c.id_cliente, c.nombre, c.apellido, c.telefono,
+                     p.id_producto, p.nombre, p.marca, p.modelo, p.precio_costo,
+                     ee.nombre
+            HAVING COALESCE(SUM(da.monto), 0) < a.total_producto
+            ORDER BY a.fecha_inicio ASC
+        """
+        resultados = self.db.fetch_all(query)
         
-        # El estado nace como 'pagado' si el abono inicial cubre el total, sino 'pendiente'
-        estado = "pagado" if primer_abono >= monto_final else "pendiente"
+        # Calcular saldo pendiente para cada uno
+        for r in resultados:
+            r['saldo_pendiente'] = float(r['total_producto']) - float(r['total_pagado'])
+            r['porcentaje_pagado'] = (float(r['total_pagado']) / float(r['total_producto'])) * 100 if r['total_producto'] > 0 else 0
+            
+        return resultados
 
-        query_apartado = """
-            INSERT INTO apartado 
-                (id_cliente_fk, id_producto_fk, total_producto, fecha_inicio, estado, 
-                 monto_original, descuento_pactado, monto_final)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    def obtener_todos_apartados(self) -> list[dict]:
+        """
+        Obtiene TODOS los apartados (activos, completados, cancelados).
+        Útil para reportes y administración.
+        """
+        query = """
+            SELECT a.id_apartado, 
+                   a.total_producto, 
+                   a.monto_original,
+                   a.descuento_pactado,
+                   a.monto_final,
+                   a.fecha_inicio, 
+                   a.estado,
+                   a.es_envio,
+                   c.nombre as cliente_nombre, 
+                   c.apellido as cliente_apellido,
+                   p.nombre as producto_nombre, 
+                   p.marca,
+                   COALESCE(SUM(da.monto), 0) as total_pagado
+            FROM apartado a
+            JOIN cliente c ON a.id_cliente_fk = c.id_cliente
+            JOIN producto p ON a.id_producto_fk = p.id_producto
+            LEFT JOIN detalle_apartado da ON a.id_apartado = da.id_apartado_fk
+            GROUP BY a.id_apartado, c.nombre, c.apellido, p.nombre, p.marca
+            ORDER BY a.fecha_inicio DESC
+        """
+        return self.db.fetch_all(query)
+
+    def crear_apartado(self, data: dict) -> int | None:
+        """
+        Crea un nuevo apartado con todos los campos de la tabla.
+        data debe contener: id_cliente_fk, id_producto_fk, total_producto,
+                           fecha_inicio, monto_original, descuento_pactado,
+                           monto_final, es_envio, id_empresa_fk (opcional)
+        """
+        query = """
+            INSERT INTO apartado (
+                id_cliente_fk, id_producto_fk, total_producto, 
+                fecha_inicio, estado, monto_original, 
+                descuento_pactado, monto_final, es_envio, id_empresa_fk
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id_apartado
         """
-        params = (id_cliente, id_producto, monto_original, fecha_inicio, estado, 
-                  monto_original, descuento, monto_final)
+        params = (
+            data['id_cliente_fk'],
+            data['id_producto_fk'],
+            data['total_producto'],
+            data['fecha_inicio'],
+            'ACTIVO',
+            data.get('monto_original', data['total_producto']),
+            data.get('descuento_pactado', 0),
+            data.get('monto_final', data['total_producto']),
+            data.get('es_envio', False),
+            data.get('id_empresa_fk')
+        )
+        resultado = self.db.fetch_one(query, params)
+        return resultado['id_apartado'] if resultado else None
+
+    def registrar_abono(self, id_apartado: int, monto: float, id_caja_fk: int, id_usuario_fk: int) -> bool:
+        """Registra un abono a un apartado existente."""
+        return self.apartado_dao.registrar_abono(id_apartado, monto, id_caja_fk, id_usuario_fk)
+
+    def cancelar_apartado(self, id_apartado: int, total_pagado: float, id_caja_fk: int, id_usuario_fk: int) -> bool:
+        """Cancela un apartado y registra la devolución correspondiente."""
+        return self.apartado_dao.cancelar_apartado(id_apartado, total_pagado, id_caja_fk, id_usuario_fk)
+
+    def obtener_estado_caja(self) -> dict:
+        """Verifica si hay una caja abierta y devuelve su ID."""
+        query = """
+            SELECT ac.id_apertura, ac.id_caja_fk
+            FROM apertura_cierre ac
+            WHERE ac.fecha_hora_cierre IS NULL
+            ORDER BY ac.fecha_hora_apertura DESC
+            LIMIT 1
+        """
+        resultado = self.db.fetch_one(query)
+        if resultado:
+            return {'abierta': True, 'id_caja': resultado['id_caja_fk']}
+        return {'abierta': False, 'id_caja': None}
+    
+    def obtener_detalle_apartado(self, id_apartado: int) -> dict | None:
+        """Obtiene el detalle completo de un apartado específico."""
+        query = """
+            SELECT a.*, 
+                   c.nombre as cliente_nombre, 
+                   c.apellido as cliente_apellido,
+                   c.telefono as cliente_telefono,
+                   p.nombre as producto_nombre,
+                   p.marca, p.modelo,
+                   COALESCE(SUM(da.monto), 0) as total_pagado,
+                   COUNT(da.id_detalle) as num_pagos
+            FROM apartado a
+            JOIN cliente c ON a.id_cliente_fk = c.id_cliente
+            JOIN producto p ON a.id_producto_fk = p.id_producto
+            LEFT JOIN detalle_apartado da ON a.id_apartado = da.id_apartado_fk
+            WHERE a.id_apartado = %s
+            GROUP BY a.id_apartado, c.nombre, c.apellido, c.telefono, p.nombre, p.marca, p.modelo
+        """
+        return self.db.fetch_one(query, (id_apartado,))
+    
+    def obtener_historial_pagos(self, id_apartado: int) -> list[dict]:
+        """Obtiene el historial de pagos de un apartado."""
+        query = """
+            SELECT da.id_detalle, da.fecha_pago, da.monto,
+                   mc.tipo_movimiento, mc.descripcion, mc.fecha_hora,
+                   u.nombre as usuario_nombre
+            FROM detalle_apartado da
+            JOIN movimiento_caja mc ON da.id_movimiento_fk = mc.id_movimiento
+            JOIN usuario u ON mc.id_usuario_fk = u.id_usuario
+            WHERE da.id_apartado_fk = %s
+            ORDER BY da.fecha_pago DESC
+        """
+        return self.db.fetch_all(query, (id_apartado,))
+    
+    # services/apartado_service.py - AGREGAR ESTOS MÉTODOS
+
+    def crear_cuenta_por_cobrar_apartado(self, id_apartado: int, id_caja_fk: int, id_usuario_fk: int) -> bool:
+        """
+        Crea una cuenta por cobrar para un apartado que es por envío.
+        Esto permite rastrear el cobro del envío.
+        """
+        # Obtener datos del apartado
+        apartado = self.obtener_detalle_apartado(id_apartado)
+        if not apartado:
+            return False
         
-        try:
-            res = self.db.fetch_one(query_apartado, params)
-            if not res:
-                return None
-
-            id_apartado = res['id_apartado']
-            print(f"✅ Apartado principal creado (ID: {id_apartado})")
-
-            if primer_abono > 0:
-                self.registrar_abono(id_apartado, primer_abono)
-            
-            return id_apartado
-            
-        except Exception as e:
-            print(f"❌ Error al insertar en tabla 'apartado': {e}")
-            return None
-
-    def registrar_abono(self, id_apartado, monto):
-        """Registra un pago y verifica si el apartado se liquida."""
-        try:
-            # Asegúrate de que el nombre de la tabla sea 'detalle_apartado'
-            query_detalle = """
-                INSERT INTO detalle_apartado (id_apartado_fk, id_movimiento_fk, fecha_pago, monto)
-                VALUES (%s, 1, CURRENT_DATE, %s)
-                RETURNING id_detalle
+        # Crear movimiento de caja como CUENTA_POR_COBRAR
+        query_movimiento = """
+            INSERT INTO movimiento_caja (
+                id_caja_fk, tipo_movimiento, descripcion, monto, fecha_hora, id_usuario_fk
+            ) VALUES (%s, %s, %s, %s, NOW(), %s)
+            RETURNING id_movimiento
+        """
+        
+        descripcion = f"Apartado por envío #{id_apartado} - {apartado['cliente_nombre']}"
+        resultado_mov = self.db.fetch_one(
+            query_movimiento,
+            (id_caja_fk, 'CUENTA_POR_COBRAR', descripcion, apartado['total_producto'], id_usuario_fk)
+        )
+        
+        if not resultado_mov:
+            return False
+        
+        id_movimiento = resultado_mov['id_movimiento']
+        
+        # Crear cuenta por cobrar
+        query_cuenta = """
+            INSERT INTO cuenta_por_cobrar (
+                id_movimiento_fk, numero_documento, monto, id_venta_fk, pagado
+            ) VALUES (%s, %s, %s, %s, false)
+        """
+        
+        numero_documento = f"APARTADO-{id_apartado}"
+        
+        return self.db.execute_query(
+            query_cuenta,
+            (id_movimiento, numero_documento, apartado['total_producto'], None)
+        )
+    
+    def registrar_abono(self, id_apartado: int, monto: float, id_caja_fk: int, id_usuario_fk: int) -> bool:
+        """Registra un abono a un apartado existente."""
+        # Primero verificar si el apartado es por envío y crear cuenta por cobrar si no existe
+        apartado = self.obtener_detalle_apartado(id_apartado)
+        if apartado and apartado.get('es_envio'):
+            # Verificar si ya existe cuenta por cobrar para este apartado
+            query_verificar = """
+                SELECT id_cuenta FROM cuenta_por_cobrar 
+                WHERE numero_documento = %s
             """
-            res = self.db.fetch_one(query_detalle, (id_apartado, monto))
-            
-            if res:
-                print(f"✅ Abono de {monto} registrado exitosamente")
-                # Al registrar abono, revisamos si ya terminó de pagar todo
-                self.verificar_liquidacion(id_apartado)
-                return res['id_detalle']
-                
-        except Exception as e:
-            print(f"❌ ERROR EN DETALLE: {e}")
-            print("💡 Tip: Verifica que el Movimiento ID 1 exista en tu base de datos.")
-
-    def verificar_liquidacion(self, id_apartado):
-        """Compara el total pagado contra el monto final y actualiza el estado."""
-        # 1. Obtener datos del apartado
-        apartado = self.db.fetch_one("SELECT monto_final, estado FROM apartado WHERE id_apartado = %s", (id_apartado,))
+            existe = self.db.fetch_one(query_verificar, (f"APARTADO-{id_apartado}",))
+            if not existe:
+                self.crear_cuenta_por_cobrar_apartado(id_apartado, id_caja_fk, id_usuario_fk)
         
-        # 2. Sumar todos los abonos realizados en la tabla de detalles
-        res_sum = self.db.fetch_one("SELECT SUM(monto) as total FROM detalle_apartado WHERE id_apartado_fk = %s", (id_apartado,))
-        
-        total_pagado = res_sum['total'] if res_sum['total'] else 0
-        monto_objetivo = apartado['monto_final']
-        faltante = monto_objetivo - total_pagado
-
-        print(f"📊 Resumen de Cuenta: Pagado {total_pagado} | Faltan {max(0, faltante)}")
-
-        # 3. Si ya pagó todo y el estado era pendiente, lo pasamos a pagado
-        if total_pagado >= monto_objetivo and apartado['estado'] == 'pendiente':
-            ok = self.db.execute_query(
-                "UPDATE apartado SET estado = 'pagado' WHERE id_apartado = %s", 
-                (id_apartado,)
-            )
-            if ok:
-                print(f"🎊 ¡APARTADO #{id_apartado} LIQUIDADO COMPLETAMENTE!")
-
-# ──────────────────────────────────────────────────────────────
-# BLOQUE DE PRUEBA PARA VARIOS ABONOS
-# ──────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    servicio = ServiceApartado()
-    print("\n--- 🛒 PRUEBA DE ABONOS MÚLTIPLES ---")
-
-    try:
-        # 1. Crear un nuevo apartado para la prueba
-        print("Primero, creemos un apartado rápido:")
-        id_p = int(input("ID del producto (ej. 1): "))
-        id_c = int(input("ID del cliente (ej. 1): "))
-        m_o  = float(input("Precio del producto: "))
-        
-        id_a = servicio.crear_apartado(id_c, id_p, m_o, descuento=0, primer_abono=0)
-
-        # 2. Bucle para hacer abonos seguidos
-        if id_a:
-            print(f"\n--- Iniciando ciclo de abonos para Apartado #{id_a} ---")
-            
-            while True:
-                continuar = input("\n¿Desea realizar un abono? (s/n): ").lower()
-                if continuar != 's':
-                    break
-                
-                monto_abono = float(input("Monto a abonar: "))
-                servicio.registrar_abono(id_a, monto_abono)
-                
-                # Consultar si ya se pagó para sugerir salir
-                estado_actual = servicio.db.fetch_one("SELECT estado FROM apartado WHERE id_apartado = %s", (id_a,))
-                if estado_actual['estado'] == 'pagado':
-                    print("El apartado ya está totalmente pagado. Saliendo...")
-                    break
-
-        print("\n🚀 Prueba finalizada. Revisa tu historial en Supabase.")
-
-    except Exception as e:
-        print(f"❌ Error durante la prueba: {e}")
+        # Registrar el abono normalmente
+        return self.apartado_dao.registrar_abono(id_apartado, monto, id_caja_fk, id_usuario_fk)

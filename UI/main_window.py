@@ -194,9 +194,15 @@ class MainWindow(QMainWindow):
         self.content_layout.addWidget(widget)
         widget.caja_abierta_signal.connect(self.actualizar_id_caja)
 
+# En main_window.py, actualiza el método show_apartados:
+
     def show_apartados(self):
         self.limpiar_contenido()
-        widget = VentanaApartados(self.id_caja_actual)
+        from UI.apartados_ui import VentanaApartados
+        widget = VentanaApartados(
+            id_usuario_actual=self.usuario_data['id_usuario'],
+            id_caja_actual=self.id_caja_actual
+        )
         self.content_layout.addWidget(widget)
 
     def show_reportes(self):
