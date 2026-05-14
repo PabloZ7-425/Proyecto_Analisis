@@ -1,1034 +1,721 @@
 # UI/caja_ui.py
-
 from PyQt5.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QGroupBox,
-    QFormLayout,
-    QLineEdit,
-    QDoubleSpinBox,
-    QComboBox,
-    QMessageBox,
-    QHeaderView,
-    QTabWidget,
-    QGridLayout
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout,
+    QLineEdit, QDoubleSpinBox, QComboBox, QMessageBox,
+    QHeaderView, QTabWidget, QGridLayout, QDialog, QSpinBox,
+    QDialogButtonBox
 )
-
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QIntValidator
-
 import sys
 import os
+from datetime import datetime
 
-# =========================================================
-# RUTAS
-# =========================================================
-sys.path.append(
-    os.path.dirname(
-        os.path.dirname(
-            os.path.abspath(__file__)
-        )
-    )
-)
-
-# =========================================================
-# IMPORTS
-# =========================================================
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.conexion import DatabaseConnection
-from services.gasto_service import GastoService
 
 
 # =========================================================
-# VENTANA CAJA
+# DIÁLOGO PARA VER DENOMINACIONES DE UN CIERRE
 # =========================================================
-class VentanaCaja(QWidget):
-
-    caja_abierta_signal = pyqtSignal(int)
-
-    def __init__(self, usuario_data):
-
-        super().__init__()
-
-        self.usuario_data = usuario_data
-
-        self.db = DatabaseConnection()
-
-        # =================================================
-        # SERVICE GASTOS
-        # =================================================
-        self.gasto_service = GastoService(self.db)
-
-        self.id_caja_actual = None
-        self.id_apertura_actual = None
-
-        # =================================================
-        # DENOMINACIONES
-        # =================================================
-        self.denominaciones = [200, 100, 50, 20, 10, 5, 1]
-
-        self.inputs_efectivo = {}
-
-        self.init_ui()
-
-        self.verificar_estado_caja()
-
-    # =====================================================
-    # UI
-    # =====================================================
-    def init_ui(self):
-
+class DialogoDenominaciones(QDialog):
+    def __init__(self, titulo, detalles, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(titulo)
+        self.setFixedSize(400, 300)
         layout = QVBoxLayout()
 
-        layout.setSpacing(20)
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Denominación", "Cantidad", "Subtotal"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
-        # =================================================
-        # HEADER
-        # =================================================
-        header = QLabel("Control de Caja")
+        total = 0
+        table.setRowCount(len(detalles))
+        for i, (den, cant, subtotal) in enumerate(detalles):
+            table.setItem(i, 0, QTableWidgetItem(f"Q {den}.00"))
+            table.setItem(i, 1, QTableWidgetItem(str(cant)))
+            table.setItem(i, 2, QTableWidgetItem(f"Q {subtotal:.2f}"))
+            total += subtotal
 
-        header.setFont(
-            QFont("Segoe UI", 18, QFont.Bold)
-        )
+        layout.addWidget(table)
 
-        layout.addWidget(header)
+        lbl_total = QLabel(f"<b>TOTAL: Q {total:.2f}</b>")
+        lbl_total.setAlignment(Qt.AlignRight)
+        layout.addWidget(lbl_total)
 
-        # =================================================
-        # ESTADO
-        # =================================================
-        self.estado_frame = QLabel()
-
-        self.estado_frame.setStyleSheet("""
-            border-radius: 10px;
-            padding: 15px;
-            font-weight: bold;
-        """)
-
-        layout.addWidget(self.estado_frame)
-
-        # =================================================
-        # TABS
-        # =================================================
-        self.tabs = QTabWidget()
-
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #E5E7EB;
-                border-radius: 12px;
-                background-color: white;
-            }
-
-            QTabBar::tab:selected {
-                background-color: #F5C800;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-weight: bold;
-            }
-        """)
-
-        self.tabs.addTab(
-            self.crear_tab_apertura(),
-            "Apertura / Cierre"
-        )
-
-        self.tabs.addTab(
-            self.crear_tab_movimientos(),
-            "Movimientos"
-        )
-
-        self.tabs.addTab(
-            self.crear_tab_historial(),
-            "Historial"
-        )
-
-        layout.addWidget(self.tabs)
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        btn_box.accepted.connect(self.accept)
+        layout.addWidget(btn_box)
 
         self.setLayout(layout)
 
-    # =====================================================
-    # TAB APERTURA
-    # =====================================================
-    def crear_tab_apertura(self):
 
+# =========================================================
+# DIÁLOGO PARA CONTAR EFECTIVO EN APERTURA Y CIERRE
+# =========================================================
+class DialogoConteoEfectivo(QDialog):
+    def __init__(self, titulo, parent=None):
+        super().__init__(parent)
+        self.denominaciones = [200, 100, 50, 20, 10, 5, 1]
+        self.inputs = {}
+        self.init_ui(titulo)
+
+    def init_ui(self, titulo):
+        self.setWindowTitle(titulo)
+        self.setFixedSize(400, 400)
+        layout = QVBoxLayout()
+
+        grid = QGridLayout()
+        for i, den in enumerate(self.denominaciones):
+            lbl = QLabel(f"Q {den}.00")
+            spin = QSpinBox()
+            spin.setRange(0, 9999)
+            spin.setValue(0)
+            self.inputs[den] = spin
+            grid.addWidget(lbl, i, 0)
+            grid.addWidget(spin, i, 1)
+
+        layout.addLayout(grid)
+
+        self.lbl_total = QLabel("<b>TOTAL: Q 0.00</b>")
+        self.lbl_total.setAlignment(Qt.AlignRight)
+        layout.addWidget(self.lbl_total)
+
+        for spin in self.inputs.values():
+            spin.valueChanged.connect(self.actualizar_total)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(self.accept)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        self.setLayout(layout)
+        self.actualizar_total()
+
+    def actualizar_total(self):
+        total = sum(den * spin.value() for den, spin in self.inputs.items())
+        self.lbl_total.setText(f"<b>TOTAL: Q {total:,.2f}</b>")
+
+    def get_total(self):
+        return sum(den * spin.value() for den, spin in self.inputs.items())
+
+    def get_detalles(self):
+        return [(den, spin.value(), den * spin.value()) for den, spin in self.inputs.items() if spin.value() > 0]
+
+
+# =========================================================
+# VENTANA CAJA PRINCIPAL
+# =========================================================
+class VentanaCaja(QWidget):
+    caja_abierta_signal = pyqtSignal(int)
+
+    def __init__(self, usuario_data):
+        super().__init__()
+        self.usuario_data = usuario_data
+        self.db = DatabaseConnection()
+        self.id_caja_actual = None
+        self.id_apertura_actual = None
+        self.monto_inicial_actual = 0
+        self.init_ui()
+        self.verificar_estado_caja()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setSpacing(20)
+
+        header = QLabel("Control de Caja")
+        header.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        layout.addWidget(header)
+
+        # Panel de estado principal
+        self.estado_frame = QLabel()
+        self.estado_frame.setStyleSheet("border-radius: 10px; padding: 15px; font-weight: bold;")
+        self.estado_frame.setWordWrap(True)
+        layout.addWidget(self.estado_frame)
+
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #E5E7EB; border-radius: 12px; background-color: white; }
+            QTabBar::tab:selected { background-color: #F5C800; border-radius: 8px; padding: 10px 20px; font-weight: bold; }
+        """)
+        self.tabs.addTab(self.crear_tab_apertura_cierre(), "Apertura / Cierre")
+        self.tabs.addTab(self.crear_tab_movimientos(), "Movimientos y Resumen")
+        self.tabs.addTab(self.crear_tab_historial(), "Historial")
+
+        layout.addWidget(self.tabs)
+        self.setLayout(layout)
+
+    # ------------------- TAB APERTURA/CIERRE -------------------
+    def crear_tab_apertura_cierre(self):
         tab = QWidget()
-
         layout_principal = QHBoxLayout()
-
         layout_principal.setSpacing(25)
+        layout_principal.setContentsMargins(15, 15, 15, 15)
 
-        layout_principal.setContentsMargins(
-            15,
-            15,
-            15,
-            15
+        # Panel izquierdo: conteo para apertura
+        grupo_conteo = QGroupBox("Conteo de efectivo para APERTURA")
+        grupo_conteo.setStyleSheet("""
+            QGroupBox { font-weight: bold; border: 1px solid #E5E7EB; border-radius: 12px; margin-top: 12px; padding-top: 15px; }
+        """)
+        ly_conteo = QVBoxLayout()
+        grid = QGridLayout()
+        self.inputs_efectivo = {}
+        validador = QIntValidator(0, 9999)
+
+        denominaciones = [200, 100, 50, 20, 10, 5, 1]
+        for i, den in enumerate(denominaciones):
+            lbl = QLabel(f"Q {den}.00")
+            edit = QLineEdit("0")
+            edit.setFixedWidth(60)
+            edit.setAlignment(Qt.AlignCenter)
+            edit.setValidator(validador)
+            edit.textChanged.connect(self.actualizar_monto_inicial_desde_conteo)
+            self.inputs_efectivo[den] = edit
+            grid.addWidget(lbl, i, 0)
+            grid.addWidget(edit, i, 1)
+
+        ly_conteo.addLayout(grid)
+        self.lbl_total_conteo = QLabel("<b>TOTAL CONTEO: Q 0.00</b>")
+        self.lbl_total_conteo.setAlignment(Qt.AlignRight)
+        ly_conteo.addWidget(self.lbl_total_conteo)
+        grupo_conteo.setLayout(ly_conteo)
+
+        # Panel derecho: botones apertura/cierre
+        ly_derecho = QVBoxLayout()
+        ly_derecho.setSpacing(15)
+
+        apertura_group = QGroupBox("Apertura de Caja")
+        apertura_group.setStyleSheet(grupo_conteo.styleSheet())
+        apertura_layout = QFormLayout()
+        self.monto_inicial_spin = QDoubleSpinBox()
+        self.monto_inicial_spin.setMinimum(0)
+        self.monto_inicial_spin.setMaximum(100000)
+        self.monto_inicial_spin.setPrefix("Q ")
+        apertura_layout.addRow("Monto Inicial:", self.monto_inicial_spin)
+        self.apertura_btn = QPushButton("Abrir Caja")
+        self.apertura_btn.setStyleSheet(
+            "background-color: #10B981; color: white; border-radius: 8px; padding: 10px; font-weight: bold;")
+        self.apertura_btn.clicked.connect(self.abrir_caja)
+        apertura_layout.addRow(self.apertura_btn)
+        apertura_group.setLayout(apertura_layout)
+
+        cierre_group = QGroupBox("Cierre de Caja")
+        cierre_group.setStyleSheet(grupo_conteo.styleSheet())
+        cierre_layout = QFormLayout()
+        self.cierre_btn = QPushButton("Cerrar Caja")
+        self.cierre_btn.setStyleSheet(
+            "background-color: #EF4444; color: white; border-radius: 8px; padding: 10px; font-weight: bold;")
+        self.cierre_btn.clicked.connect(self.cerrar_caja)
+        cierre_layout.addRow(self.cierre_btn)
+        cierre_group.setLayout(cierre_layout)
+
+        ly_derecho.addWidget(apertura_group)
+        ly_derecho.addWidget(cierre_group)
+        ly_derecho.addStretch()
+
+        layout_principal.addWidget(grupo_conteo, 2)
+        layout_principal.addLayout(ly_derecho, 1)
+        tab.setLayout(layout_principal)
+        return tab
+
+    def actualizar_monto_inicial_desde_conteo(self):
+        total = sum(int(e.text() or 0) * den for den, e in self.inputs_efectivo.items())
+        self.lbl_total_conteo.setText(f"<b>TOTAL CONTEO: Q {total:,.2f}</b>")
+        self.monto_inicial_spin.setValue(total)
+
+    def abrir_caja(self):
+        monto = self.monto_inicial_spin.value()
+        if monto <= 0:
+            QMessageBox.warning(self, "Error", "El monto inicial debe ser mayor a cero")
+            return
+
+        # Obtener detalles del conteo
+        detalles = [(den, int(edit.text() or 0), den * int(edit.text() or 0))
+                    for den, edit in self.inputs_efectivo.items() if int(edit.text() or 0) > 0]
+
+        # Crear caja del día si no existe
+        caja_result = self.db.fetch_one(
+            "INSERT INTO caja (fecha) VALUES (CURRENT_DATE) ON CONFLICT (fecha) DO UPDATE SET fecha = CURRENT_DATE RETURNING id_caja",
+            ()
         )
+        if not caja_result:
+            # Intentar obtener caja existente
+            caja_result = self.db.fetch_one("SELECT id_caja FROM caja WHERE fecha = CURRENT_DATE", ())
+            if not caja_result:
+                QMessageBox.critical(self, "Error", "No se pudo crear/obtener la caja del día")
+                return
+        id_caja = caja_result['id_caja']
 
-        # =================================================
-        # DESGLOSE EFECTIVO
-        # =================================================
-        grupo_desglose = QGroupBox(
-            "Conteo para Apertura"
-        )
+        # Crear apertura
+        apertura_result = self.db.fetch_one("""
+            INSERT INTO apertura_cierre (id_caja_fk, id_usuario_fk, fecha_hora_apertura, monto_inicial, estado, observacion_apertura)
+            VALUES (%s, %s, NOW(), %s, 'ABIERTO', %s)
+            RETURNING id_apertura
+        """, (id_caja, self.usuario_data['id_usuario'], monto, "Apertura con conteo"))
 
-        grupo_desglose.setStyleSheet("""
+        if not apertura_result:
+            QMessageBox.critical(self, "Error", "No se pudo abrir la caja")
+            return
+
+        id_apertura = apertura_result['id_apertura']
+
+        # Guardar detalles de apertura
+        for den, cant, subtotal in detalles:
+            self.db.execute_query("""
+                INSERT INTO detalle_apertura (id_apertura_fk, denominacion, cantidad, subtotal)
+                VALUES (%s, %s, %s, %s)
+            """, (id_apertura, den, cant, subtotal))
+
+        QMessageBox.information(self, "Éxito", f"Caja abierta correctamente con Q {monto:,.2f}")
+        self.verificar_estado_caja()
+
+    def cerrar_caja(self):
+        if not self.id_apertura_actual:
+            QMessageBox.warning(self, "Error", "No hay una caja abierta para cerrar")
+            return
+
+        # Mostrar diálogo de conteo de efectivo
+        dialog = DialogoConteoEfectivo("Conteo de efectivo para CIERRE", self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        monto_contado = dialog.get_total()
+        detalles_cierre = dialog.get_detalles()
+
+        # Calcular efectivo esperado correctamente
+        # Efectivo esperado = monto_inicial + ventas_efectivo + otros_ingresos - egresos
+        query = """
+            SELECT 
+                COALESCE(SUM(v.total) FILTER (WHERE v.forma_pago = 'EF' AND v.producto_pagado = TRUE), 0) AS ventas_efectivo,
+                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO' AND v.id_venta IS NULL), 0) AS otros_ingresos,
+                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'EGRESO'), 0) AS egresos
+            FROM movimiento_caja mc
+            LEFT JOIN venta v ON mc.id_movimiento = v.id_movimiento_fk
+            WHERE mc.id_caja_fk = (SELECT id_caja_fk FROM apertura_cierre WHERE id_apertura = %s)
+              AND mc.fecha_hora >= (SELECT fecha_hora_apertura FROM apertura_cierre WHERE id_apertura = %s)
+        """
+        res = self.db.fetch_one(query, (self.id_apertura_actual, self.id_apertura_actual))
+        ventas_efectivo = float(res['ventas_efectivo'] or 0)
+        otros_ingresos = float(res['otros_ingresos'] or 0)
+        egresos = float(res['egresos'] or 0)
+
+        monto_esperado = self.monto_inicial_actual + ventas_efectivo + otros_ingresos - egresos
+        diferencia = monto_contado - monto_esperado
+
+        resumen = f"""
+        <b>RESUMEN DE CIERRE</b><br><br>
+        Monto inicial: Q {self.monto_inicial_actual:,.2f}<br>
+        Ventas en efectivo: Q {ventas_efectivo:,.2f}<br>
+        Otros ingresos: Q {otros_ingresos:,.2f}<br>
+        Egresos: Q {egresos:,.2f}<br>
+        <b>Efectivo esperado:</b> Q {monto_esperado:,.2f}<br>
+        <b>Efectivo contado:</b> Q {monto_contado:,.2f}<br>
+        <b>Diferencia:</b> Q {diferencia:,.2f}<br>
+        """
+        if abs(diferencia) < 0.01:
+            resumen += "<span style='color:green'>✓ CAJA CUADRADA</span>"
+        elif diferencia > 0:
+            resumen += "<span style='color:orange'>⚠️ Sobrante</span>"
+        else:
+            resumen += "<span style='color:red'>❌ Faltante</span>"
+
+        reply = QMessageBox.question(self, "Confirmar cierre", resumen, QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+
+        # Actualizar cierre
+        query_update = """
+            UPDATE apertura_cierre
+            SET fecha_hora_cierre = NOW(),
+                monto_final = %s,
+                monto_esperado = %s,
+                diferencia = %s,
+                observacion_cierre = %s,
+                estado = 'CERRADO',
+                id_usuario_cierre_fk = %s
+            WHERE id_apertura = %s
+        """
+        obs = f"Cierre. Contado: Q{monto_contado:.2f}, Esperado: Q{monto_esperado:.2f}, Diferencia: Q{diferencia:.2f}"
+        self.db.execute_query(query_update, (
+        monto_contado, monto_esperado, diferencia, obs, self.usuario_data['id_usuario'], self.id_apertura_actual))
+
+        # Guardar detalles de cierre
+        for den, cant, subtotal in detalles_cierre:
+            self.db.execute_query("""
+                INSERT INTO detalle_cierre (id_apertura_fk, denominacion, cantidad, subtotal)
+                VALUES (%s, %s, %s, %s)
+            """, (self.id_apertura_actual, den, cant, subtotal))
+
+        QMessageBox.information(self, "Éxito", "Caja cerrada correctamente")
+        self.verificar_estado_caja()
+
+    # ------------------- TAB MOVIMIENTOS Y RESUMEN -------------------
+    def crear_tab_movimientos(self):
+        tab = QWidget()
+        layout = QVBoxLayout()
+
+        # Panel de resumen del turno
+        resumen_group = QGroupBox("Resumen del Turno Actual")
+        resumen_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
                 border: 1px solid #E5E7EB;
                 border-radius: 12px;
                 margin-top: 12px;
                 padding-top: 15px;
+                background-color: #F8FAFC;
             }
         """)
-
-        ly_desglose = QVBoxLayout()
-
-        grid = QGridLayout()
-
-        validador = QIntValidator(0, 9999)
-
-        for i, den in enumerate(self.denominaciones):
-
-            lbl = QLabel(f"Q {den}.00")
-
-            lbl.setFixedWidth(60)
-
-            h_controles = QHBoxLayout()
-
-            btn_menos = QPushButton("-")
-
-            btn_menos.setFixedSize(30, 30)
-
-            btn_menos.clicked.connect(
-                lambda ch, d=den:
-                self.ajustar_conteo(d, -1)
-            )
-
-            edit = QLineEdit("0")
-
-            edit.setFixedWidth(55)
-
-            edit.setFixedHeight(30)
-
-            edit.setAlignment(Qt.AlignCenter)
-
-            edit.setValidator(validador)
-
-            edit.textChanged.connect(
-                self.actualizar_monto_inicial_desde_conteo
-            )
-
-            self.inputs_efectivo[den] = edit
-
-            btn_mas = QPushButton("+")
-
-            btn_mas.setFixedSize(30, 30)
-
-            btn_mas.clicked.connect(
-                lambda ch, d=den:
-                self.ajustar_conteo(d, 1)
-            )
-
-            h_controles.addWidget(btn_menos)
-
-            h_controles.addWidget(edit)
-
-            h_controles.addWidget(btn_mas)
-
-            grid.addWidget(lbl, i, 0)
-
-            grid.addLayout(h_controles, i, 1)
-
-        ly_desglose.addLayout(grid)
-
-        self.lbl_total_conteo = QLabel(
-            "TOTAL CONTEO: Q 0.00"
-        )
-
-        self.lbl_total_conteo.setStyleSheet("""
-            font-size: 14px;
-            font-weight: 800;
-            color: #111827;
-            margin-top: 10px;
-            border-top: 1px solid #EEE;
-            padding-top: 10px;
-        """)
-
-        ly_desglose.addWidget(
-            self.lbl_total_conteo,
-            alignment=Qt.AlignRight
-        )
-
-        grupo_desglose.setLayout(ly_desglose)
-
-        # =================================================
-        # DERECHO
-        # =================================================
-        ly_derecho = QVBoxLayout()
-
-        ly_derecho.setSpacing(15)
-
-        # =================================================
-        # APERTURA
-        # =================================================
-        apertura_group = QGroupBox(
-            "Apertura de Caja"
-        )
-
-        apertura_group.setStyleSheet(
-            grupo_desglose.styleSheet()
-        )
-
-        apertura_layout = QFormLayout()
-
-        self.monto_inicial = QDoubleSpinBox()
-
-        self.monto_inicial.setMinimum(0)
-
-        self.monto_inicial.setMaximum(100000)
-
-        self.monto_inicial.setPrefix("Q")
-
-        self.monto_inicial.setFixedHeight(35)
-
-        apertura_layout.addRow(
-            "Monto Inicial:",
-            self.monto_inicial
-        )
-
-        self.apertura_btn = QPushButton(
-            "Abrir Caja"
-        )
-
-        self.apertura_btn.setStyleSheet("""
-            background-color: #10B981;
-            color: white;
-            border-radius: 8px;
-            padding: 10px;
-            font-weight: bold;
-        """)
-
-        self.apertura_btn.clicked.connect(
-            self.abrir_caja
-        )
-
-        apertura_layout.addRow(
-            self.apertura_btn
-        )
-
-        apertura_group.setLayout(apertura_layout)
-
-        # =================================================
-        # CIERRE
-        # =================================================
-        cierre_group = QGroupBox(
-            "Cierre de Caja"
-        )
-
-        cierre_group.setStyleSheet(
-            grupo_desglose.styleSheet()
-        )
-
-        cierre_layout = QFormLayout()
-
-        self.monto_final = QDoubleSpinBox()
-
-        self.monto_final.setMinimum(0)
-
-        self.monto_final.setMaximum(1000000)
-
-        self.monto_final.setPrefix("Q")
-
-        self.monto_final.setFixedHeight(35)
-
-        cierre_layout.addRow(
-            "Monto Final:",
-            self.monto_final
-        )
-
-        self.cierre_btn = QPushButton(
-            "Cerrar Caja"
-        )
-
-        self.cierre_btn.setStyleSheet("""
-            background-color: #EF4444;
-            color: white;
-            border-radius: 8px;
-            padding: 10px;
-            font-weight: bold;
-        """)
-
-        self.cierre_btn.clicked.connect(
-            self.cerrar_caja
-        )
-
-        cierre_layout.addRow(self.cierre_btn)
-
-        cierre_group.setLayout(cierre_layout)
-
-        ly_derecho.addWidget(apertura_group)
-
-        ly_derecho.addWidget(cierre_group)
-
-        ly_derecho.addStretch()
-
-        layout_principal.addWidget(
-            grupo_desglose,
-            2
-        )
-
-        layout_principal.addLayout(
-            ly_derecho,
-            1
-        )
-
-        tab.setLayout(layout_principal)
-
-        return tab
-
-    # =====================================================
-    # TAB MOVIMIENTOS
-    # =====================================================
-    def crear_tab_movimientos(self):
-
-        tab = QWidget()
-
-        layout = QVBoxLayout()
-
-        form_group = QGroupBox(
-            "Registrar Movimiento"
-        )
-
+        resumen_layout = QGridLayout()
+
+        # Totales generales
+        self.lbl_total_ventas = QLabel("Q 0.00")
+        self.lbl_total_ventas.setStyleSheet("font-size: 16px; font-weight: bold; color: #111827;")
+        resumen_layout.addWidget(QLabel(" TOTAL VENTAS DEL TURNO:"), 0, 0)
+        resumen_layout.addWidget(self.lbl_total_ventas, 0, 1)
+
+        # Desglose
+        self.lbl_ventas_efectivo = QLabel("Q 0.00")
+        self.lbl_ventas_efectivo.setStyleSheet("color: #10B981;")
+        resumen_layout.addWidget(QLabel("   Efectivo:"), 1, 0)
+        resumen_layout.addWidget(self.lbl_ventas_efectivo, 1, 1)
+
+        self.lbl_ventas_tarjeta = QLabel("Q 0.00")
+        self.lbl_ventas_tarjeta.setStyleSheet("color: #3B82F6;")
+        resumen_layout.addWidget(QLabel("    Tarjeta / Transferencia / Depósito:"), 2, 0)
+        resumen_layout.addWidget(self.lbl_ventas_tarjeta, 2, 1)
+
+        self.lbl_cuentas_cobrar = QLabel("Q 0.00")
+        self.lbl_cuentas_cobrar.setStyleSheet("color: #F59E0B;")
+        resumen_layout.addWidget(QLabel("   📦 Cuentas por cobrar (envíos no pagados):"), 3, 0)
+        resumen_layout.addWidget(self.lbl_cuentas_cobrar, 3, 1)
+
+        # Efectivo actual en caja
+        self.lbl_efectivo_actual = QLabel("Q 0.00")
+        self.lbl_efectivo_actual.setStyleSheet("font-size: 18px; font-weight: bold; color: #059669;")
+        resumen_layout.addWidget(QLabel("EFECTIVO ACTUAL EN CAJA:"), 4, 0)
+        resumen_layout.addWidget(self.lbl_efectivo_actual, 4, 1)
+
+        # Egresos
+        self.lbl_egresos = QLabel("Q 0.00")
+        self.lbl_egresos.setStyleSheet("color: #EF4444;")
+        resumen_layout.addWidget(QLabel("    Egresos (gastos/retiros):"), 5, 0)
+        resumen_layout.addWidget(self.lbl_egresos, 5, 1)
+
+        resumen_group.setLayout(resumen_layout)
+        layout.addWidget(resumen_group)
+
+        # Formulario para registrar movimientos manuales
+        form_group = QGroupBox("Registrar Movimiento Manual")
         form_group.setStyleSheet("""
-            font-weight: bold;
-            border: 1px solid #E5E7EB;
-            border-radius: 12px;
-            margin-top: 12px;
-            padding-top: 10px;
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #E5E7EB;
+                border-radius: 12px;
+                margin-top: 12px;
+                padding-top: 10px;
+            }
         """)
-
         form_layout = QFormLayout()
 
-        # =================================================
-        # TIPO MOVIMIENTO
-        # =================================================
         self.tipo_movimiento = QComboBox()
+        self.tipo_movimiento.addItems(["INGRESO", "EGRESO"])
+        self.tipo_movimiento.currentTextChanged.connect(self.toggle_gasto_field)
+        form_layout.addRow("Tipo:", self.tipo_movimiento)
 
-        self.tipo_movimiento.addItems([
-            "INGRESO",
-            "EGRESO"
-        ])
-
-        form_layout.addRow(
-            "Tipo:",
-            self.tipo_movimiento
-        )
-
-        # =================================================
-        # TIPO GASTO
-        # =================================================
         self.tipo_gasto = QComboBox()
-
-        self.tipo_gasto.addItems([
-            "PROVEEDOR",
-            "SUELDOS",
-            "SERVICIOS",
-            "INSUMOS",
-            "DEVOLUCION",
-            "OTRO"
-        ])
-
-        form_layout.addRow(
-            "Tipo Gasto:",
-            self.tipo_gasto
-        )
+        self.tipo_gasto.addItems(["PROVEEDOR", "SUELDOS", "SERVICIOS", "INSUMOS", "DEVOLUCION", "OTRO"])
+        self.tipo_gasto.setEnabled(False)
+        form_layout.addRow("Tipo Gasto:", self.tipo_gasto)
 
         self.descripcion_mov = QLineEdit()
-
-        self.descripcion_mov.setPlaceholderText(
-            "Descripcion del movimiento"
-        )
-
-        form_layout.addRow(
-            "Descripcion:",
-            self.descripcion_mov
-        )
+        self.descripcion_mov.setPlaceholderText("Descripción del movimiento")
+        form_layout.addRow("Descripción:", self.descripcion_mov)
 
         self.monto_mov = QDoubleSpinBox()
-
         self.monto_mov.setMinimum(0)
-
         self.monto_mov.setMaximum(100000)
+        self.monto_mov.setPrefix("Q ")
+        form_layout.addRow("Monto:", self.monto_mov)
 
-        self.monto_mov.setPrefix("Q")
-
-        form_layout.addRow(
-            "Monto:",
-            self.monto_mov
-        )
-
-        registrar_btn = QPushButton(
-            "Registrar Movimiento"
-        )
-
-        registrar_btn.setStyleSheet("""
-            background-color: #F5C800;
-            border: none;
-            border-radius: 8px;
-            padding: 10px;
-            font-weight: bold;
-        """)
-
-        registrar_btn.clicked.connect(
-            self.registrar_movimiento
-        )
-
+        registrar_btn = QPushButton("Registrar Movimiento")
+        registrar_btn.setStyleSheet(
+            "background-color: #F5C800; border: none; border-radius: 8px; padding: 10px; font-weight: bold;")
+        registrar_btn.clicked.connect(self.registrar_movimiento)
         form_layout.addRow(registrar_btn)
 
         form_group.setLayout(form_layout)
-
         layout.addWidget(form_group)
 
-        # =================================================
-        # TABLA
-        # =================================================
+        # Tabla de movimientos del turno
         self.movimientos_table = QTableWidget()
-
         self.movimientos_table.setColumnCount(5)
-
-        self.movimientos_table.setHorizontalHeaderLabels([
-            "Fecha",
-            "Tipo",
-            "Descripcion",
-            "Monto",
-            "Usuario"
-        ])
-
-        self.movimientos_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch
-        )
-
+        self.movimientos_table.setHorizontalHeaderLabels(["Fecha", "Tipo", "Descripción", "Monto", "Usuario"])
+        self.movimientos_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.movimientos_table)
 
         tab.setLayout(layout)
-
         return tab
 
-    # =====================================================
-    # TAB HISTORIAL
-    # =====================================================
-    def crear_tab_historial(self):
+    def toggle_gasto_field(self, tipo):
+        self.tipo_gasto.setEnabled(tipo == "EGRESO")
 
-        tab = QWidget()
-
-        layout = QVBoxLayout()
-
-        self.historial_table = QTableWidget()
-
-        self.historial_table.setColumnCount(6)
-
-        self.historial_table.setHorizontalHeaderLabels([
-            "Fecha Apertura",
-            "Fecha Cierre",
-            "Usuario",
-            "Monto Inicial",
-            "Monto Final",
-            "Diferencia"
-        ])
-
-        self.historial_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch
-        )
-
-        layout.addWidget(self.historial_table)
-
-        refresh_btn = QPushButton("Actualizar")
-
-        refresh_btn.clicked.connect(
-            self.cargar_historial
-        )
-
-        layout.addWidget(
-            refresh_btn,
-            alignment=Qt.AlignRight
-        )
-
-        tab.setLayout(layout)
-
-        return tab
-
-    # =====================================================
-    # AJUSTAR CONTEO
-    # =====================================================
-    def ajustar_conteo(self, den, delta):
-
-        actual = int(
-            self.inputs_efectivo[den].text() or 0
-        )
-
-        self.inputs_efectivo[den].setText(
-            str(max(0, actual + delta))
-        )
-
-    # =====================================================
-    # ACTUALIZAR MONTO
-    # =====================================================
-    def actualizar_monto_inicial_desde_conteo(self):
-
-        total = sum(
-            d * int(e.text() or 0)
-            for d, e in self.inputs_efectivo.items()
-        )
-
-        self.lbl_total_conteo.setText(
-            f"TOTAL CONTEO: Q {total:,.2f}"
-        )
-
-        self.monto_inicial.setValue(total)
-
-    # =====================================================
-    # VERIFICAR ESTADO
-    # =====================================================
-    def verificar_estado_caja(self):
-
-        query = """
-            SELECT
-                ac.id_apertura,
-                ac.id_caja_fk,
-                ac.monto_inicial,
-                ac.fecha_hora_apertura,
-                u.nombre as usuario_nombre
-            FROM apertura_cierre ac
-            JOIN usuario u
-                ON ac.id_usuario_fk = u.id_usuario
-            WHERE ac.fecha_hora_cierre IS NULL
-            ORDER BY ac.fecha_hora_apertura DESC
-            LIMIT 1
-        """
-
-        resultado = self.db.fetch_one(query)
-
-        if resultado:
-
-            self.id_apertura_actual = resultado['id_apertura']
-
-            self.id_caja_actual = resultado['id_caja_fk']
-
-            self.caja_abierta_signal.emit(
-                self.id_caja_actual
-            )
-
-            self.estado_frame.setText(
-                f"CAJA ABIERTA - Usuario: "
-                f"{resultado['usuario_nombre']} "
-                f"| Monto: Q{resultado['monto_inicial']:.2f}"
-            )
-
-            self.estado_frame.setStyleSheet("""
-                background-color: #D1FAE5;
-                color: #059669;
-                border-radius: 10px;
-                padding: 15px;
-            """)
-
-            self.apertura_btn.setEnabled(False)
-
-            self.cierre_btn.setEnabled(True)
-
-            self.cargar_movimientos()
-
-        else:
-
-            self.id_apertura_actual = None
-
-            self.id_caja_actual = None
-
-            self.estado_frame.setText(
-                "CAJA CERRADA"
-            )
-
-            self.estado_frame.setStyleSheet("""
-                background-color: #FEE2E2;
-                color: #DC2626;
-                border-radius: 10px;
-                padding: 15px;
-            """)
-
-            self.apertura_btn.setEnabled(True)
-
-            self.cierre_btn.setEnabled(False)
-
-        self.cargar_historial()
-
-    # =====================================================
-    # ABRIR CAJA
-    # =====================================================
-    def abrir_caja(self):
-
-        monto = self.monto_inicial.value()
-
-        if monto <= 0:
-
-            QMessageBox.warning(
-                self,
-                "Error",
-                "Ingrese un monto valido"
-            )
-
-            return
-
-        caja_query = """
-            INSERT INTO caja (fecha)
-            VALUES (CURRENT_DATE)
-            RETURNING id_caja
-        """
-
-        caja_result = self.db.fetch_one(caja_query)
-
-        if not caja_result:
-
-            QMessageBox.critical(
-                self,
-                "Error",
-                "No se pudo abrir caja"
-            )
-
-            return
-
-        id_caja = caja_result['id_caja']
-
-        apertura_query = """
-            INSERT INTO apertura_cierre
-            (
-                id_caja_fk,
-                id_usuario_fk,
-                fecha_hora_apertura,
-                monto_inicial
-            )
-            VALUES
-            (
-                %s,
-                %s,
-                NOW(),
-                %s
-            )
-            RETURNING id_apertura
-        """
-
-        apertura_result = self.db.fetch_one(
-            apertura_query,
-            (
-                id_caja,
-                self.usuario_data['id_usuario'],
-                monto
-            )
-        )
-
-        if apertura_result:
-
-            QMessageBox.information(
-                self,
-                "Exito",
-                "Caja abierta correctamente"
-            )
-
-            self.verificar_estado_caja()
-
-    # =====================================================
-    # CERRAR CAJA
-    # =====================================================
-    def cerrar_caja(self):
-
-        monto_final = self.monto_final.value()
-
-        query = """
-            UPDATE apertura_cierre
-            SET
-                fecha_hora_cierre = NOW(),
-                monto_final = %s
-            WHERE id_apertura = %s
-        """
-
-        if self.db.execute_query(
-            query,
-            (
-                monto_final,
-                self.id_apertura_actual
-            )
-        ):
-
-            QMessageBox.information(
-                self,
-                "Exito",
-                "Caja cerrada"
-            )
-
-            self.verificar_estado_caja()
-
-    # =====================================================
-    # REGISTRAR MOVIMIENTO
-    # =====================================================
     def registrar_movimiento(self):
-
         if not self.id_apertura_actual:
-
-            QMessageBox.warning(
-                self,
-                "Error",
-                "Debe abrir la caja primero"
-            )
-
+            QMessageBox.warning(self, "Error", "Debe abrir la caja primero")
             return
 
         tipo = self.tipo_movimiento.currentText()
-
         tipo_gasto = self.tipo_gasto.currentText()
-
         descripcion = self.descripcion_mov.text().strip()
-
         monto = self.monto_mov.value()
 
         if not descripcion or monto <= 0:
-
-            QMessageBox.warning(
-                self,
-                "Error",
-                "Complete los campos correctamente"
-            )
-
+            QMessageBox.warning(self, "Error", "Complete todos los campos correctamente")
             return
 
-        # =================================================
-        # MOVIMIENTO CAJA
-        # =================================================
-        query = """
-            INSERT INTO movimiento_caja
-            (
-                id_caja_fk,
-                tipo_movimiento,
-                descripcion,
-                monto,
-                fecha_hora
-            )
-            VALUES
-            (
-                %s,
-                %s,
-                %s,
-                %s,
-                NOW()
-            )
-            RETURNING id_movimiento
+        # Insertar movimiento
+        query_mov = """
+            INSERT INTO movimiento_caja (id_caja_fk, tipo_movimiento, descripcion, monto, fecha_hora, id_usuario_fk)
+            VALUES (%s, %s, %s, %s, NOW(), %s) RETURNING id_movimiento
         """
-
-        movimiento = self.db.fetch_one(
-            query,
-            (
-                self.id_caja_actual,
-                tipo,
-                descripcion,
-                monto
-            )
-        )
-
+        movimiento = self.db.fetch_one(query_mov,
+                                       (self.id_caja_actual, tipo, descripcion, monto, self.usuario_data['id_usuario']))
         if not movimiento:
-
-            QMessageBox.critical(
-                self,
-                "Error",
-                "No se pudo registrar el movimiento"
-            )
-
+            QMessageBox.critical(self, "Error", "No se pudo registrar el movimiento")
             return
 
-        # =================================================
-        # EGRESO -> GASTO
-        # =================================================
+        # Si es egreso, insertar en gasto
         if tipo == "EGRESO":
-
-            resultado_gasto = self.gasto_service.crear_gasto(
-                movimiento['id_movimiento'],
-                tipo_gasto,
-                descripcion,
-                monto
-            )
-
-            if not resultado_gasto:
-
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    "No se pudo registrar el gasto"
-                )
-
+            query_gasto = """
+                INSERT INTO gasto (id_movimiento_fk, tipo_gasto, descripcion, monto)
+                VALUES (%s, %s, %s, %s)
+            """
+            if not self.db.execute_query(query_gasto, (movimiento['id_movimiento'], tipo_gasto, descripcion, monto)):
+                QMessageBox.critical(self, "Error", "No se pudo registrar el gasto")
                 return
 
-        QMessageBox.information(
-            self,
-            "Exito",
-            "Movimiento registrado"
-        )
-
+        QMessageBox.information(self, "Éxito", "Movimiento registrado")
         self.descripcion_mov.clear()
-
         self.monto_mov.setValue(0)
-
         self.cargar_movimientos()
 
-    # =====================================================
-    # CARGAR MOVIMIENTOS
-    # =====================================================
-    def cargar_movimientos(self):
+    # ------------------- TAB HISTORIAL -------------------
+    def crear_tab_historial(self):
+        tab = QWidget()
+        layout = QVBoxLayout()
 
+        self.historial_table = QTableWidget()
+        self.historial_table.setColumnCount(8)
+        self.historial_table.setHorizontalHeaderLabels([
+            "Fecha Apertura", "Fecha Cierre", "Usuario Apertura", "Usuario Cierre",
+            "Monto Inicial", "Monto Esperado", "Monto Final", "Diferencia"
+        ])
+        self.historial_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.historial_table)
+
+        btn_layout = QHBoxLayout()
+        refresh_btn = QPushButton("Actualizar")
+        refresh_btn.clicked.connect(self.cargar_historial)
+        btn_layout.addWidget(refresh_btn, alignment=Qt.AlignRight)
+        layout.addLayout(btn_layout)
+
+        tab.setLayout(layout)
+        return tab
+
+    # ------------------- MÉTODOS DE ACTUALIZACIÓN -------------------
+    def verificar_estado_caja(self):
+        query = """
+            SELECT ac.id_apertura, ac.id_caja_fk, ac.monto_inicial, ac.fecha_hora_apertura,
+                   u.nombre as usuario_nombre
+            FROM apertura_cierre ac
+            JOIN usuario u ON ac.id_usuario_fk = u.id_usuario
+            WHERE ac.estado = 'ABIERTO'
+            ORDER BY ac.fecha_hora_apertura DESC LIMIT 1
+        """
+        resultado = self.db.fetch_one(query)
+        if resultado:
+            self.id_apertura_actual = resultado['id_apertura']
+            self.id_caja_actual = resultado['id_caja_fk']
+            self.monto_inicial_actual = float(resultado['monto_inicial'])
+            self.caja_abierta_signal.emit(self.id_caja_actual)
+
+            # Mostrar estado abierto
+            self.estado_frame.setText(
+                f" CAJA ABIERTA\n"
+                f"Usuario: {resultado['usuario_nombre']}\n"
+                f"Monto inicial: Q {self.monto_inicial_actual:,.2f}\n"
+                f"Apertura: {resultado['fecha_hora_apertura']}"
+            )
+            self.estado_frame.setStyleSheet(
+                "background-color: #D1FAE5; color: #059669; border-radius: 10px; padding: 15px;")
+            self.apertura_btn.setEnabled(False)
+            self.cierre_btn.setEnabled(True)
+            self.cargar_movimientos()
+        else:
+            self.id_apertura_actual = None
+            self.id_caja_actual = None
+            self.monto_inicial_actual = 0
+
+            # Obtener último cierre con sus denominaciones
+            ultimo_cierre = self.db.fetch_one("""
+                SELECT ac.monto_final, ac.fecha_hora_cierre, u.nombre as usuario_nombre
+                FROM apertura_cierre ac
+                JOIN usuario u ON ac.id_usuario_fk = u.id_usuario
+                WHERE ac.estado = 'CERRADO'
+                ORDER BY ac.fecha_hora_cierre DESC LIMIT 1
+            """)
+            if ultimo_cierre:
+                monto_cierre = float(ultimo_cierre['monto_final'])
+                fecha = ultimo_cierre['fecha_hora_cierre']
+                usuario = ultimo_cierre['usuario_nombre']
+                self.estado_frame.setText(
+                    f" CAJA CERRADA\n"
+                    f"Último cierre: Q {monto_cierre:,.2f}\n"
+                    f"Fecha: {fecha}\n"
+                    f"Cajero: {usuario}"
+                )
+                # Botón para ver denominaciones del último cierre
+                btn_den = QPushButton("Ver denominaciones del último cierre")
+                btn_den.clicked.connect(self.ver_denominaciones_ultimo_cierre)
+                # Necesitamos agregar este botón dinámicamente. Lo haremos en el layout principal.
+                # Pero para simplificar, lo agregamos en un layout aparte. Mejor agregar al estado_frame?
+                # Voy a agregar un botón aparte en la UI principal.
+                if not hasattr(self, 'btn_den_cierre'):
+                    self.btn_den_cierre = QPushButton("Ver denominaciones del último cierre")
+                    self.btn_den_cierre.clicked.connect(self.ver_denominaciones_ultimo_cierre)
+                    # Insertar después del estado_frame en el layout principal
+                    self.layout().insertWidget(2, self.btn_den_cierre)
+                else:
+                    self.btn_den_cierre.show()
+            else:
+                self.estado_frame.setText(" CAJA CERRADA\nNo hay cierres previos")
+                if hasattr(self, 'btn_den_cierre'):
+                    self.btn_den_cierre.hide()
+
+            self.estado_frame.setStyleSheet(
+                "background-color: #FEE2E2; color: #DC2626; border-radius: 10px; padding: 15px;")
+            self.apertura_btn.setEnabled(True)
+            self.cierre_btn.setEnabled(False)
+            self.cargar_historial()
+            self.actualizar_resumen_turno()
+
+    def ver_denominaciones_ultimo_cierre(self):
+        # Obtener detalles del último cierre
+        query = """
+            SELECT dc.denominacion, dc.cantidad, dc.subtotal
+            FROM detalle_cierre dc
+            JOIN apertura_cierre ac ON dc.id_apertura_fk = ac.id_apertura
+            WHERE ac.estado = 'CERRADO'
+            ORDER BY ac.fecha_hora_cierre DESC
+            LIMIT 100
+        """
+        detalles = self.db.fetch_all(query)
+        if not detalles:
+            QMessageBox.information(self, "Información", "No hay detalles de denominaciones para el último cierre")
+            return
+        detalles_list = [(d['denominacion'], d['cantidad'], float(d['subtotal'])) for d in detalles]
+        dialog = DialogoDenominaciones("Denominaciones del último cierre", detalles_list, self)
+        dialog.exec_()
+
+    def cargar_movimientos(self):
         if not self.id_apertura_actual:
+            self.movimientos_table.setRowCount(0)
             return
 
         query = """
-            SELECT
-                mc.fecha_hora,
-                mc.tipo_movimiento,
-                mc.descripcion,
-                mc.monto,
-                u.nombre
+            SELECT mc.fecha_hora, mc.tipo_movimiento, mc.descripcion, mc.monto, u.nombre
             FROM movimiento_caja mc
-            JOIN apertura_cierre ac
-                ON mc.id_caja_fk = ac.id_caja_fk
-            JOIN usuario u
-                ON ac.id_usuario_fk = u.id_usuario
+            JOIN apertura_cierre ac ON mc.id_caja_fk = ac.id_caja_fk
+            JOIN usuario u ON mc.id_usuario_fk = u.id_usuario
             WHERE ac.id_apertura = %s
+              AND mc.fecha_hora >= ac.fecha_hora_apertura
+              AND (ac.fecha_hora_cierre IS NULL OR mc.fecha_hora <= ac.fecha_hora_cierre)
             ORDER BY mc.fecha_hora DESC
         """
-
-        movs = self.db.fetch_all(
-            query,
-            (self.id_apertura_actual,)
-        )
-
-        self.movimientos_table.setRowCount(
-            len(movs)
-        )
-
+        movs = self.db.fetch_all(query, (self.id_apertura_actual,))
+        # ... el resto del método igual
+        self.movimientos_table.setRowCount(len(movs))
         for i, m in enumerate(movs):
+            self.movimientos_table.setItem(i, 0, QTableWidgetItem(str(m['fecha_hora'])[:19]))
+            self.movimientos_table.setItem(i, 1, QTableWidgetItem(m['tipo_movimiento']))
+            self.movimientos_table.setItem(i, 2, QTableWidgetItem(m['descripcion']))
+            self.movimientos_table.setItem(i, 3, QTableWidgetItem(f"Q {float(m['monto']):,.2f}"))
+            self.movimientos_table.setItem(i, 4, QTableWidgetItem(m['nombre']))
 
-            self.movimientos_table.setItem(
-                i,
-                0,
-                QTableWidgetItem(
-                    str(m['fecha_hora'])[:19]
-                )
-            )
+        self.actualizar_resumen_turno()
 
-            self.movimientos_table.setItem(
-                i,
-                1,
-                QTableWidgetItem(
-                    m['tipo_movimiento']
-                )
-            )
+    def actualizar_resumen_turno(self):
+        if not self.id_apertura_actual:
+            # Limpiar labels
+            self.lbl_total_ventas.setText("Q 0.00")
+            self.lbl_ventas_efectivo.setText("Q 0.00")
+            self.lbl_ventas_tarjeta.setText("Q 0.00")
+            self.lbl_cuentas_cobrar.setText("Q 0.00")
+            self.lbl_efectivo_actual.setText("Q 0.00")
+            self.lbl_egresos.setText("Q 0.00")
+            return
 
-            self.movimientos_table.setItem(
-                i,
-                2,
-                QTableWidgetItem(
-                    m['descripcion']
-                )
-            )
-
-            self.movimientos_table.setItem(
-                i,
-                3,
-                QTableWidgetItem(
-                    f"Q{m['monto']:.2f}"
-                )
-            )
-
-            self.movimientos_table.setItem(
-                i,
-                4,
-                QTableWidgetItem(
-                    m['nombre']
-                )
-            )
-
-    # =====================================================
-    # CARGAR HISTORIAL
-    # =====================================================
-    def cargar_historial(self):
-
+        # Consulta corregida usando venta.forma_pago
         query = """
-            SELECT
-                ac.fecha_hora_apertura,
-                ac.fecha_hora_cierre,
-                u.nombre,
-                ac.monto_inicial,
-                ac.monto_final
+            SELECT 
+                COALESCE(SUM(v.total) FILTER (WHERE v.producto_pagado = TRUE), 0) AS total_ventas_pagadas,
+                COALESCE(SUM(v.total) FILTER (WHERE v.forma_pago = 'EF' AND v.producto_pagado = TRUE), 0) AS ventas_efectivo,
+                COALESCE(SUM(v.total) FILTER (WHERE v.forma_pago IN ('TC/TD','TF','DP') AND v.producto_pagado = TRUE), 0) AS ventas_no_efectivo,
+                COALESCE(SUM(v.total) FILTER (WHERE v.producto_pagado = FALSE), 0) AS cuentas_cobrar,
+                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'EGRESO'), 0) AS egresos,
+                COALESCE(SUM(mc.monto) FILTER (WHERE mc.tipo_movimiento = 'INGRESO' AND v.id_venta IS NULL), 0) AS otros_ingresos
+            FROM movimiento_caja mc
+            LEFT JOIN venta v ON mc.id_movimiento = v.id_movimiento_fk
+            WHERE mc.id_caja_fk = (SELECT id_caja_fk FROM apertura_cierre WHERE id_apertura = %s)
+              AND mc.fecha_hora >= (SELECT fecha_hora_apertura FROM apertura_cierre WHERE id_apertura = %s)
+        """
+        res = self.db.fetch_one(query, (self.id_apertura_actual, self.id_apertura_actual))
+        total_ventas_pagadas = float(res['total_ventas_pagadas'] or 0)
+        ventas_efectivo = float(res['ventas_efectivo'] or 0)
+        ventas_no_efectivo = float(res['ventas_no_efectivo'] or 0)
+        cuentas_cobrar = float(res['cuentas_cobrar'] or 0)
+        egresos = float(res['egresos'] or 0)
+        otros_ingresos = float(res['otros_ingresos'] or 0)
+
+        # Total ventas del turno = ventas pagadas + cuentas por cobrar
+        total_ventas_turno = total_ventas_pagadas + cuentas_cobrar
+
+        # Efectivo actual en caja
+        efectivo_actual = self.monto_inicial_actual + ventas_efectivo + otros_ingresos - egresos
+
+        self.lbl_total_ventas.setText(f"Q {total_ventas_turno:,.2f}")
+        self.lbl_ventas_efectivo.setText(f"Q {ventas_efectivo:,.2f}")
+        self.lbl_ventas_tarjeta.setText(f"Q {ventas_no_efectivo:,.2f}")
+        self.lbl_cuentas_cobrar.setText(f"Q {cuentas_cobrar:,.2f}")
+        self.lbl_efectivo_actual.setText(f"Q {efectivo_actual:,.2f}")
+        self.lbl_egresos.setText(f"Q {egresos:,.2f}")
+
+    def cargar_historial(self):
+        query = """
+            SELECT ac.fecha_hora_apertura, ac.fecha_hora_cierre, 
+                   ua.nombre as usuario_apertura, uc.nombre as usuario_cierre,
+                   ac.monto_inicial, ac.monto_esperado, ac.monto_final, ac.diferencia
             FROM apertura_cierre ac
-            JOIN usuario u
-                ON ac.id_usuario_fk = u.id_usuario
-            WHERE ac.fecha_hora_cierre IS NOT NULL
+            JOIN usuario ua ON ac.id_usuario_fk = ua.id_usuario
+            LEFT JOIN usuario uc ON ac.id_usuario_cierre_fk = uc.id_usuario
+            WHERE ac.estado = 'CERRADO'
             ORDER BY ac.fecha_hora_apertura DESC
         """
-
         hist = self.db.fetch_all(query)
-
-        self.historial_table.setRowCount(
-            len(hist)
-        )
-
+        self.historial_table.setRowCount(len(hist))
         for i, h in enumerate(hist):
-
-            self.historial_table.setItem(
-                i,
-                0,
-                QTableWidgetItem(
-                    str(h['fecha_hora_apertura'])[:19]
-                )
-            )
-
-            self.historial_table.setItem(
-                i,
-                1,
-                QTableWidgetItem(
-                    str(h['fecha_hora_cierre'])[:19]
-                )
-            )
-
-            self.historial_table.setItem(
-                i,
-                2,
-                QTableWidgetItem(
-                    h['nombre']
-                )
-            )
-
-            self.historial_table.setItem(
-                i,
-                3,
-                QTableWidgetItem(
-                    f"Q{h['monto_inicial']:.2f}"
-                )
-            )
-
-            self.historial_table.setItem(
-                i,
-                4,
-                QTableWidgetItem(
-                    f"Q{h['monto_final']:.2f}"
-                )
-            )
-
-            diff = (
-                h['monto_final']
-                - h['monto_inicial']
-            ) if h['monto_final'] else 0
-
-            self.historial_table.setItem(
-                i,
-                5,
-                QTableWidgetItem(
-                    f"Q{diff:.2f}"
-                )
-            )
+            self.historial_table.setItem(i, 0, QTableWidgetItem(str(h['fecha_hora_apertura'])[:19]))
+            self.historial_table.setItem(i, 1, QTableWidgetItem(str(h['fecha_hora_cierre'])[:19]) if h[
+                'fecha_hora_cierre'] else "-")
+            self.historial_table.setItem(i, 2, QTableWidgetItem(h['usuario_apertura']))
+            self.historial_table.setItem(i, 3, QTableWidgetItem(h['usuario_cierre'] if h['usuario_cierre'] else "-"))
+            self.historial_table.setItem(i, 4, QTableWidgetItem(f"Q {float(h['monto_inicial']):,.2f}"))
+            esperado = f"Q {float(h['monto_esperado']):,.2f}" if h['monto_esperado'] is not None else "-"
+            self.historial_table.setItem(i, 5, QTableWidgetItem(esperado))
+            final = f"Q {float(h['monto_final']):,.2f}" if h['monto_final'] else "-"
+            self.historial_table.setItem(i, 6, QTableWidgetItem(final))
+            diff = f"Q {float(h['diferencia']):,.2f}" if h['diferencia'] is not None else "-"
+            self.historial_table.setItem(i, 7, QTableWidgetItem(diff))

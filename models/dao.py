@@ -5,20 +5,19 @@ Utiliza la conexión existente de conexion.py
 
 from datetime import date, datetime
 from database.conexion  import DatabaseConnection
-from usuario import Usuario
-from caja import Caja
-from apertura_cierre import AperturaCierre
-from movimiento import MovimientoCaja
-from cliente import Cliente
-from producto import Producto
-from venta import Venta
-from detalle_venta import DetalleVenta
-from apartado import Apartado
-from detalle_apartado import DetalleApartado
-from gasto import Gasto
-from cuenta_por_cobrar import CuentaPorCobrar
-from empresa_envio import EmpresaEnvio
-
+from models.usuario import Usuario
+from models.caja import Caja
+from models.apertura_cierre import AperturaCierre
+from models.movimiento import MovimientoCaja
+from models.cliente import Cliente
+from models.producto import Producto
+from models.venta import Venta
+from models.detalle_venta import DetalleVenta
+from models.apartado import Apartado
+from models.detalle_apartado import DetalleApartado
+from models.gasto import Gasto
+from models.cuenta_por_cobrar import CuentaPorCobrar
+from models.empresa_envio import EmpresaEnvio
 
 # ==================== USUARIO DAO ====================
 
