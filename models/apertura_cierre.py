@@ -1,4 +1,8 @@
 from datetime import datetime
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from Utils.tiempo import ahora_local
 
 
 class AperturaCierre:
@@ -8,7 +12,8 @@ class AperturaCierre:
         self.id_apertura = id_apertura
         self.id_caja_fk = id_caja_fk
         self.id_usuario_fk = id_usuario_fk
-        self.fecha_hora_apertura = fecha_hora_apertura or datetime.now()
+        # Usar ahora_local() en lugar de datetime.now()
+        self.fecha_hora_apertura = fecha_hora_apertura or ahora_local()
         self.monto_inicial = monto_inicial
         self.fecha_hora_cierre = fecha_hora_cierre
         self.monto_final = monto_final
@@ -37,7 +42,7 @@ class AperturaCierre:
         )
 
     def cerrar(self, monto_final):
-        self.fecha_hora_cierre = datetime.now()
+        self.fecha_hora_cierre = ahora_local()
         self.monto_final = monto_final
 
     def esta_abierta(self):

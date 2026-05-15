@@ -22,22 +22,26 @@ class DatabaseConnection:
         self.cursor = None
 
     def connect(self):
-        """Establece conexión con Supabase"""
+        """Establece conexión y fija zona horaria de Guatemala"""
         try:
             params = DatabaseConfig.get_connection_params()
             self.connection = psycopg2.connect(**params)
             self.connection.autocommit = False
+
+            # 👇 Fijar zona horaria a Guatemala
+            with self.connection.cursor() as cur:
+                cur.execute("SET TIME ZONE 'America/Guatemala'")
+
             self.cursor = self.connection.cursor(
                 cursor_factory=psycopg2.extras.RealDictCursor
             )
-            print("Conexión a Supabase establecida.")
+            print("Conexión establecida (zona: America/Guatemala).")
             return True
         except psycopg2.OperationalError as e:
-            print(f"Error al conectar con Supabase: {e}")
+            print(f"Error al conectar: {e}")
             return False
 
     def disconnect(self):
-        """Cierra cursor y conexión de forma segura"""
         try:
             if self.cursor:
                 self.cursor.close()
@@ -54,7 +58,6 @@ class DatabaseConnection:
         return True
 
     def execute_query(self, query, params=None):
-        """INSERT / UPDATE / DELETE. Retorna True si tuvo éxito."""
         if not self._ensure_connected():
             return False
         try:
@@ -63,11 +66,10 @@ class DatabaseConnection:
             return True
         except Exception as e:
             self.connection.rollback()
-            print(f" Error en execute_query: {e}")
+            print(f"Error en execute_query: {e}")
             return False
 
     def fetch_one(self, query, params=None):
-        """SELECT → un registro (dict) o None."""
         if not self._ensure_connected():
             return None
         try:
@@ -80,7 +82,6 @@ class DatabaseConnection:
             return None
 
     def fetch_all(self, query, params=None):
-        """SELECT → lista de registros (dicts) o []."""
         if not self._ensure_connected():
             return []
         try:

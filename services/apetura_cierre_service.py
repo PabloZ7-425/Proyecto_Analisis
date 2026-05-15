@@ -8,6 +8,7 @@ sys.path.append(ruta_raiz)
 
 from models.apertura_cierre import AperturaCierre
 from database.conexion import DatabaseConnection
+from Utils.tiempo import ahora_local
 
 class CajaService:
     def __init__(self, db_connection):
@@ -27,18 +28,14 @@ class CajaService:
         return total
 
     def abrir_caja(self, id_caja, id_usuario):
-        """Inserta la apertura en Supabase."""
         monto_ini = self.conteo_dinero_inicial()
-        
-        # El monto_final inicia igual al inicial al momento de abrir
         query = """
             INSERT INTO public.apertura_cierre 
             (id_caja_fk, id_usuario_fk, fecha_hora_apertura, monto_inicial, monto_final)
             VALUES (%s, %s, %s, %s, %s) RETURNING id_apertura
         """
-        ahora = datetime.now()
+        ahora = ahora_local()
         params = (id_caja, id_usuario, ahora, monto_ini, monto_ini)
-        
         res = self.db.fetch_one(query, params)
         if res:
             print(f"✅ Caja abierta con ID: {res['id_apertura']} | Monto: Q{monto_ini}")
@@ -61,16 +58,23 @@ class CajaService:
         return res
 
     def cerrar_caja_definitivo(self, id_apertura):
-        """Pone la fecha de cierre en el registro actual."""
-        fecha_cierre = datetime.now()
+        fecha_cierre = ahora_local()
+
         query = """
-            UPDATE public.apertura_cierre 
+            UPDATE public.apertura_cierre
             SET fecha_hora_cierre = %s
             WHERE id_apertura = %s
         """
-        if self.db.execute_query(query, (fecha_cierre, id_apertura)):
-            print(f"🔒 Turno cerrado exitosamente a las {fecha_cierre.strftime('%H:%M:%S')}")
 
+        resultado = self.db.execute_query(
+            query,
+            (fecha_cierre, id_apertura)
+        )
+
+        if resultado:
+            print(f"🔒 Turno cerrado exitosamente a las {fecha_cierre.strftime('%H:%M:%S')}")
+        else:
+            print("❌ No se pudo cerrar el turno")
 # --- PRUEBA INTERACTIVA ---
 if __name__ == "__main__":
     try:

@@ -1,4 +1,8 @@
 from datetime import datetime
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from Utils.tiempo import ahora_local
 
 
 class MovimientoCaja:
@@ -12,7 +16,8 @@ class MovimientoCaja:
         self.tipo_movimiento = tipo_movimiento
         self.descripcion = descripcion
         self.monto = monto
-        self.fecha_hora = fecha_hora or datetime.now()
+        # Usar ahora_local() en lugar de datetime.now()
+        self.fecha_hora = fecha_hora or ahora_local()
         self.id_usuario_fk = id_usuario_fk
 
     def to_dict(self):

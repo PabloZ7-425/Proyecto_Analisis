@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.conexion import DatabaseConnection
 from models.shift_model import DetalleEfectivo, AperturaTurno, CierreTurno
+from Utils.tiempo import ahora_local
 
 
 class ShiftService:
@@ -70,11 +71,11 @@ class ShiftService:
     # =========================================================
     # ABRIR TURNO
     # =========================================================
+
     def abrir_turno(self, apertura: AperturaTurno) -> Optional[int]:
         if self.hay_caja_abierta():
-            raise Exception("Ya existe un turno abierto. Ciérrelo antes de abrir uno nuevo.")
+            raise Exception("Ya existe un turno abierto.")
 
-        # Reusar caja del día o crear una nueva
         fecha_hoy = datetime.now().date()
         caja = self.db.fetch_one(
             "SELECT id_caja FROM caja WHERE fecha = %s", (fecha_hoy,)
@@ -88,6 +89,7 @@ class ShiftService:
             raise Exception("No se pudo crear/obtener la caja del día.")
         id_caja = caja['id_caja']
 
+        # Usar ahora_local() para la apertura
         query = """
             INSERT INTO apertura_cierre
                 (id_caja_fk, id_usuario_fk, fecha_hora_apertura,
@@ -98,7 +100,7 @@ class ShiftService:
         result = self.db.fetch_one(query, (
             id_caja,
             apertura.id_usuario_fk,
-            apertura.fecha_hora_apertura,
+            ahora_local(),        # 👈 cambiado
             apertura.monto_inicial,
             apertura.observacion
         ))
@@ -224,20 +226,20 @@ class ShiftService:
     # =========================================================
     def cerrar_turno(self, cierre: CierreTurno) -> bool:
         query = """
-            UPDATE apertura_cierre
-            SET
-                fecha_hora_cierre    = %s,
-                monto_final          = %s,
-                monto_esperado       = %s,
-                diferencia           = %s,
-                observacion_cierre   = %s,
-                estado               = 'CERRADO',
-                id_usuario_cierre_fk = %s
-            WHERE id_apertura = %s
-              AND estado = 'ABIERTO'
-        """
+               UPDATE apertura_cierre
+               SET
+                   fecha_hora_cierre    = %s,
+                   monto_final          = %s,
+                   monto_esperado       = %s,
+                   diferencia           = %s,
+                   observacion_cierre   = %s,
+                   estado               = 'CERRADO',
+                   id_usuario_cierre_fk = %s
+               WHERE id_apertura = %s
+                 AND estado = 'ABIERTO'
+           """
         ok = self.db.execute_query(query, (
-            cierre.fecha_hora_cierre,
+            ahora_local(),  # 👈 cambiado
             cierre.monto_contado,
             cierre.monto_esperado,
             cierre.diferencia,
