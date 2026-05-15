@@ -12,6 +12,7 @@ from UI.clientes_ui import VentanaClientes
 from UI.productos_ui import VentanaProductos
 from UI.caja_ui import VentanaCaja
 from UI.apartados_ui import VentanaApartados
+from UI.reportes_ui import VentanaReportes   # 👈 Importación del módulo de reportes
 
 
 class MainWindow(QMainWindow):
@@ -24,7 +25,7 @@ class MainWindow(QMainWindow):
         self.verificar_caja_abierta()
 
     def init_ui(self):
-        self.setWindowTitle(f"TechShop - {self.usuario_data['nombre']}")
+        self.setWindowTitle(f"Tec-Shop - {self.usuario_data['nombre']}")
         self.setGeometry(100, 100, 1200, 700)
         self.setMinimumSize(1000, 600)
 
@@ -55,7 +56,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.setContentsMargins(15, 30, 15, 30)
 
-        logo = QLabel("TECH SHOP")
+        logo = QLabel("TEC SHOP")
         logo.setFont(QFont("Arial", 18, QFont.Bold))
         logo.setStyleSheet("padding-bottom: 20px; padding-left: 15px;")
         layout.addWidget(logo)
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
             ("Apartados", self.show_apartados),
         ]
 
+        # 👇 Solo administradores ven el botón de Reportes
         if self.usuario_data['rol'].lower() in ['gerente', 'supervisor', 'admin', 'administrador']:
             botones.append(("Reportes", self.show_reportes))
 
@@ -164,7 +166,7 @@ class MainWindow(QMainWindow):
         self.content_layout.addWidget(rol_label)
 
         info = QLabel(
-            "Sistema de Control de Caja - TechShop\n\n"
+            "Sistema de Control de Caja - Tec-Shop\n\n"
             "Seleccione una opcion del menu lateral para comenzar."
         )
         info.setFont(QFont("Segoe UI", 12))
@@ -194,8 +196,6 @@ class MainWindow(QMainWindow):
         self.content_layout.addWidget(widget)
         widget.caja_abierta_signal.connect(self.actualizar_id_caja)
 
-# En main_window.py, actualiza el método show_apartados:
-
     def show_apartados(self):
         self.limpiar_contenido()
         from UI.apartados_ui import VentanaApartados
@@ -206,9 +206,9 @@ class MainWindow(QMainWindow):
         self.content_layout.addWidget(widget)
 
     def show_reportes(self):
+        """Abre la ventana de reportes (solo para administradores)"""
         self.limpiar_contenido()
-        from UI.reportes_ui import VentanaReportes
-        widget = VentanaReportes()
+        widget = VentanaReportes(self.usuario_data)   # 👈 Pasar datos del usuario
         self.content_layout.addWidget(widget)
 
     def actualizar_id_caja(self, id_caja):

@@ -35,7 +35,7 @@ class UsuarioService:
 
     def buscar_por_nombre_completo(self, nombre_buscado):
         query = "SELECT * FROM public.usuario WHERE nombre ILIKE %s"
-        params = (f"%{nombre_buscado}%",) 
+        params = (f"%{nombre_buscado}%",)
         resultados = self.db.fetch_all(query, params)
         return [Usuario.from_dict(u) for u in resultados] if resultados else []
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     try:
         db = DatabaseConnection()
         service = UsuarioService(db)
-        
+
         while True:
             print("\n--- MÓDULO DE USUARIOS ---")
             print("1. Login (Probar Username)")
@@ -57,7 +57,7 @@ if __name__ == "__main__":
             print("3. Listar Usuarios")
             print("4. Crear Nuevo")
             print("5. Salir")
-            
+
             op = input("Seleccione: ")
 
             if op == "1":
@@ -72,24 +72,24 @@ if __name__ == "__main__":
             elif op == "2":
                 nom = input("Nombre a buscar para editar: ")
                 encontrados = service.buscar_por_nombre_completo(nom)
-                
+
                 if encontrados:
                     print(f"\nResultados ({len(encontrados)}):")
                     for idx, e in enumerate(encontrados):
                         print(f"{idx + 1}. ID: {e.id_usuario} | {e.nombre} | Estado: {'Activo' if e.estado else 'Inactivo'}")
-                    
+
                     sel = int(input("\nSeleccione el número para editar (o 0 para cancelar): "))
                     if sel > 0:
                         u_ed = encontrados[sel-1]
                         print(f"\nEditando a: {u_ed.nombre}")
-                        
+
                         # Edición de Nombre
                         nuevo_nombre = input(f"Nuevo nombre [{u_ed.nombre}]: ") or u_ed.nombre
-                        
+
                         # Edición de Estado
                         nuevo_estado = input(f"¿Activo? (s/n) [{'s' if u_ed.estado else 'n'}]: ").lower()
                         est_bool = True if nuevo_estado == 's' else False
-                        
+
                         # Guardar cambios
                         service.actualizar_datos(u_ed.id_usuario, nuevo_nombre, u_ed.usuario, u_ed.password, u_ed.rol, est_bool)
                         print("✅ Datos actualizados en la base de datos.")
@@ -107,6 +107,6 @@ if __name__ == "__main__":
 
             elif op == "5":
                 break
-                
+
     except Exception as e:
         print(f"❌ Error: {e}")
