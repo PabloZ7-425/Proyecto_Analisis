@@ -28,17 +28,27 @@ class DatabaseConnection:
         cursor.close()
         return data
 
+# backend/producto_dao.py
+
 class Producto:
-    def __init__(self, id_producto=None, nombre="", marca="", modelo="", descripcion=""):
+    def __init__(self, id_producto=None, nombre="", marca="", modelo="", descripcion="", precio_costo=0.0):
         self.id_producto = id_producto
         self.nombre = nombre
         self.marca = marca
         self.modelo = modelo
         self.descripcion = descripcion
+        self.precio_costo = precio_costo
 
     @staticmethod
     def from_db(row):
-        return Producto(row[0], row[1], row[2], row[3], row[4])
+        # row: id_producto, nombre, marca, modelo, descripcion, precio_costo
+        return Producto(
+            row[0], row[1], row[2], row[3], row[4], 
+            float(row[5]) if row[5] else 0.0
+        )
+# backend/producto_dao.py (actualizado)
+
+# backend/producto_dao.py
 
 class ProductoDAO:
 
@@ -47,16 +57,44 @@ class ProductoDAO:
 
     def crear(self, producto):
         query = """
-        INSERT INTO producto (nombre, marca, modelo, descripcion)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO producto (nombre, marca, modelo, descripcion, precio_costo)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id_producto
         """
-        self.db.execute_query(
-            query,
-            (producto.nombre, producto.marca, producto.modelo, producto.descripcion)
-        )
+        cursor = self.db.conn.cursor()
+        cursor.execute(query, (
+            producto.nombre, 
+            producto.marca, 
+            producto.modelo, 
+            producto.descripcion, 
+            producto.precio_costo
+        ))
+        self.db.conn.commit()
+        id_producto = cursor.fetchone()[0]
+        cursor.close()
+        return id_producto
 
-    def listar(self):
-        datos = self.db.fetch_all("SELECT * FROM producto")
+    def listar(self, filtros=None):
+        """
+        Listar productos con filtros opcionales
+        filtros: dict con 'nombre', 'marca', 'modelo' opcionales
+        """
+        query = "SELECT id_producto, nombre, marca, modelo, descripcion, precio_costo FROM producto WHERE 1=1"
+        params = []
+        
+        if filtros:
+            if filtros.get('nombre'):
+                query += " AND nombre ILIKE %s"
+                params.append(f'%{filtros["nombre"]}%')
+            if filtros.get('marca'):
+                query += " AND marca ILIKE %s"
+                params.append(f'%{filtros["marca"]}%')
+            if filtros.get('modelo'):
+                query += " AND modelo ILIKE %s"
+                params.append(f'%{filtros["modelo"]}%')
+        
+        query += " ORDER BY id_producto"
+        datos = self.db.fetch_all(query, params)
         return [Producto.from_db(d) for d in datos]
 
     def eliminar(self, id_producto):
@@ -68,13 +106,31 @@ class ProductoDAO:
     def actualizar(self, producto):
         query = """
         UPDATE producto 
-        SET nombre=%s, marca=%s, modelo=%s, descripcion=%s
+        SET nombre=%s, marca=%s, modelo=%s, descripcion=%s, precio_costo=%s
         WHERE id_producto=%s
         """
         self.db.execute_query(
             query,
-            (producto.nombre, producto.marca, producto.modelo, producto.descripcion, producto.id_producto)
+            (
+                producto.nombre, 
+                producto.marca, 
+                producto.modelo, 
+                producto.descripcion, 
+                producto.precio_costo,
+                producto.id_producto
+            )
         )
+    
+    def buscar_por_id(self, id_producto):
+        datos = self.db.fetch_all(
+            "SELECT id_producto, nombre, marca, modelo, descripcion, precio_costo FROM producto WHERE id_producto = %s", 
+            (id_producto,)
+        )
+        if datos:
+            return Producto.from_db(datos[0])
+        return None
+    
+# backend/producto_service.py
 
 class ProductoService:
 
@@ -82,17 +138,42 @@ class ProductoService:
         self.db = DatabaseConnection()
         self.dao = ProductoDAO(self.db)
 
-    def crear(self, nombre, marca, modelo, descripcion):
-        self.dao.crear(Producto(nombre=nombre, marca=marca, modelo=modelo, descripcion=descripcion))
+    def crear(self, nombre, marca, modelo, descripcion, precio_costo):
+        producto = Producto(
+            nombre=nombre, 
+            marca=marca, 
+            modelo=modelo, 
+            descripcion=descripcion, 
+            precio_costo=precio_costo
+        )
+        return self.dao.crear(producto)
 
-    def listar(self):
-        return self.dao.listar()
+    def listar(self, nombre=None, marca=None, modelo=None):
+        filtros = {}
+        if nombre:
+            filtros['nombre'] = nombre
+        if marca:
+            filtros['marca'] = marca
+        if modelo:
+            filtros['modelo'] = modelo
+        return self.dao.listar(filtros)
 
     def eliminar(self, id_producto):
         self.dao.eliminar(id_producto)
 
-    def actualizar(self, id_producto, nombre, marca, modelo, descripcion):
-        self.dao.actualizar(Producto(id_producto, nombre, marca, modelo, descripcion))
+    def actualizar(self, id_producto, nombre, marca, modelo, descripcion, precio_costo):
+        producto = Producto(
+            id_producto, 
+            nombre, 
+            marca, 
+            modelo, 
+            descripcion, 
+            precio_costo
+        )
+        self.dao.actualizar(producto)
+    
+    def buscar_por_id(self, id_producto):
+        return self.dao.buscar_por_id(id_producto)
 
 if __name__ == "__main__":
     service = ProductoService()
