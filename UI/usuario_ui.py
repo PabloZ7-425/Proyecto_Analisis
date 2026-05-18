@@ -24,8 +24,8 @@ try:
     from models.dao import UsuarioDAO
 except ImportError:
     # Intento alternativo si no están en la carpeta models
-    from usuario import Usuario
-    from dao import UsuarioDAO
+    #from usuario import Usuario
+    #from dao import UsuarioDAO
     from database.conexion import DatabaseConnection
 
 class VentanaGestionUsuarios(QWidget):

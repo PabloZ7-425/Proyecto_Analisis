@@ -17,7 +17,7 @@ from database.conexion import DatabaseConnection
 
 
 # =========================================================
-# DIÁLOGO PARA VER DENOMINACIONES DE UN CIERRE
+# DIÁLOGO PARA VER DENOMINACIONES DE UN CIERRE (solo lectura)
 # =========================================================
 class DialogoDenominaciones(QDialog):
     def __init__(self, titulo, detalles, parent=None):
@@ -50,59 +50,6 @@ class DialogoDenominaciones(QDialog):
         layout.addWidget(btn_box)
 
         self.setLayout(layout)
-
-
-# =========================================================
-# DIÁLOGO PARA CONTAR EFECTIVO EN APERTURA Y CIERRE
-# =========================================================
-class DialogoConteoEfectivo(QDialog):
-    def __init__(self, titulo, parent=None):
-        super().__init__(parent)
-        self.denominaciones = [200, 100, 50, 20, 10, 5, 1]
-        self.inputs = {}
-        self.init_ui(titulo)
-
-    def init_ui(self, titulo):
-        self.setWindowTitle(titulo)
-        self.setFixedSize(400, 400)
-        layout = QVBoxLayout()
-
-        grid = QGridLayout()
-        for i, den in enumerate(self.denominaciones):
-            lbl = QLabel(f"Q {den}.00")
-            spin = QSpinBox()
-            spin.setRange(0, 9999)
-            spin.setValue(0)
-            self.inputs[den] = spin
-            grid.addWidget(lbl, i, 0)
-            grid.addWidget(spin, i, 1)
-
-        layout.addLayout(grid)
-
-        self.lbl_total = QLabel("<b>TOTAL: Q 0.00</b>")
-        self.lbl_total.setAlignment(Qt.AlignRight)
-        layout.addWidget(self.lbl_total)
-
-        for spin in self.inputs.values():
-            spin.valueChanged.connect(self.actualizar_total)
-
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.accepted.connect(self.accept)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
-
-        self.setLayout(layout)
-        self.actualizar_total()
-
-    def actualizar_total(self):
-        total = sum(den * spin.value() for den, spin in self.inputs.items())
-        self.lbl_total.setText(f"<b>TOTAL: Q {total:,.2f}</b>")
-
-    def get_total(self):
-        return sum(den * spin.value() for den, spin in self.inputs.items())
-
-    def get_detalles(self):
-        return [(den, spin.value(), den * spin.value()) for den, spin in self.inputs.items() if spin.value() > 0]
 
 
 # =========================================================
@@ -154,49 +101,78 @@ class VentanaCaja(QWidget):
         layout_principal.setSpacing(25)
         layout_principal.setContentsMargins(15, 15, 15, 15)
 
-        # Panel izquierdo: conteo para apertura
-        grupo_conteo = QGroupBox("Conteo de efectivo para APERTURA")
+        # Panel izquierdo: conteo de efectivo (integrado, sin ventana emergente)
+        grupo_conteo = QGroupBox("Conteo de efectivo para APERTURA y CIERRE")
         grupo_conteo.setStyleSheet("""
             QGroupBox { font-weight: bold; border: 1px solid #E5E7EB; border-radius: 12px; margin-top: 12px; padding-top: 15px; }
         """)
         ly_conteo = QVBoxLayout()
+
+        # Grid de denominaciones con botones + y -
         grid = QGridLayout()
-        self.inputs_efectivo = {}
+        self.denominaciones = [200, 100, 50, 20, 10, 5, 1]
+        self.inputs_cantidad = {}  # den -> QLineEdit
+        self.labels_subtotal = {}  # den -> QLabel
+
         validador = QIntValidator(0, 9999)
 
-        denominaciones = [200, 100, 50, 20, 10, 5, 1]
-        for i, den in enumerate(denominaciones):
-            lbl = QLabel(f"Q {den}.00")
+        for i, den in enumerate(self.denominaciones):
+            # Etiqueta de denominación
+            lbl_den = QLabel(f"Q {den}.00")
+            grid.addWidget(lbl_den, i, 0)
+
+            # Botón -
+            btn_menos = QPushButton("-")
+            btn_menos.setFixedSize(30, 30)
+            btn_menos.setStyleSheet("background-color: #f3f4f6; border: 1px solid #d1d5db;")
+            btn_menos.clicked.connect(lambda checked, d=den: self.ajustar_cantidad(d, -1))
+            grid.addWidget(btn_menos, i, 1)
+
+            # Input de cantidad
             edit = QLineEdit("0")
             edit.setFixedWidth(60)
             edit.setAlignment(Qt.AlignCenter)
             edit.setValidator(validador)
-            edit.textChanged.connect(self.actualizar_monto_inicial_desde_conteo)
-            self.inputs_efectivo[den] = edit
-            grid.addWidget(lbl, i, 0)
-            grid.addWidget(edit, i, 1)
+            edit.textChanged.connect(self.actualizar_totales_desde_conteo)
+            self.inputs_cantidad[den] = edit
+            grid.addWidget(edit, i, 2)
+
+            # Botón +
+            btn_mas = QPushButton("+")
+            btn_mas.setFixedSize(30, 30)
+            btn_mas.setStyleSheet("background-color: #f3f4f6; border: 1px solid #d1d5db;")
+            btn_mas.clicked.connect(lambda checked, d=den: self.ajustar_cantidad(d, 1))
+            grid.addWidget(btn_mas, i, 3)
+
+            # Subtotal
+            lbl_sub = QLabel("Q 0.00")
+            lbl_sub.setAlignment(Qt.AlignRight)
+            self.labels_subtotal[den] = lbl_sub
+            grid.addWidget(lbl_sub, i, 4)
 
         ly_conteo.addLayout(grid)
+
+        # Total del conteo actual
         self.lbl_total_conteo = QLabel("<b>TOTAL CONTEO: Q 0.00</b>")
         self.lbl_total_conteo.setAlignment(Qt.AlignRight)
         ly_conteo.addWidget(self.lbl_total_conteo)
-        grupo_conteo.setLayout(ly_conteo)
 
-        # Panel derecho: botones apertura/cierre
+        grupo_conteo.setLayout(ly_conteo)
+        layout_principal.addWidget(grupo_conteo, 2)
+
+        # Panel derecho: botones de apertura y cierre
         ly_derecho = QVBoxLayout()
         ly_derecho.setSpacing(15)
 
         apertura_group = QGroupBox("Apertura de Turno")
         apertura_group.setStyleSheet(grupo_conteo.styleSheet())
         apertura_layout = QFormLayout()
-        self.monto_inicial_spin = QDoubleSpinBox()
-        self.monto_inicial_spin.setMinimum(0)
-        self.monto_inicial_spin.setMaximum(100000)
-        self.monto_inicial_spin.setPrefix("Q ")
-        apertura_layout.addRow("Monto Inicial:", self.monto_inicial_spin)
+        # Mostrar el monto inicial que se tomará del conteo actual
+        self.lbl_monto_inicial = QLabel("Q 0.00")
+        self.lbl_monto_inicial.setStyleSheet("font-weight: bold; color: #10B981;")
+        apertura_layout.addRow("Monto inicial (conteo actual):", self.lbl_monto_inicial)
         self.apertura_btn = QPushButton("Abrir Turno")
-        self.apertura_btn.setStyleSheet(
-            "background-color: #10B981; color: white; border-radius: 8px; padding: 10px; font-weight: bold;")
+        self.apertura_btn.setStyleSheet("background-color: #10B981; color: white; border-radius: 8px; padding: 10px; font-weight: bold;")
         self.apertura_btn.clicked.connect(self.abrir_caja)
         apertura_layout.addRow(self.apertura_btn)
         apertura_group.setLayout(apertura_layout)
@@ -205,8 +181,7 @@ class VentanaCaja(QWidget):
         cierre_group.setStyleSheet(grupo_conteo.styleSheet())
         cierre_layout = QFormLayout()
         self.cierre_btn = QPushButton("Cerrar Turno")
-        self.cierre_btn.setStyleSheet(
-            "background-color: #EF4444; color: white; border-radius: 8px; padding: 10px; font-weight: bold;")
+        self.cierre_btn.setStyleSheet("background-color: #EF4444; color: white; border-radius: 8px; padding: 10px; font-weight: bold;")
         self.cierre_btn.clicked.connect(self.cerrar_caja)
         cierre_layout.addRow(self.cierre_btn)
         cierre_group.setLayout(cierre_layout)
@@ -215,51 +190,77 @@ class VentanaCaja(QWidget):
         ly_derecho.addWidget(cierre_group)
         ly_derecho.addStretch()
 
-        layout_principal.addWidget(grupo_conteo, 2)
         layout_principal.addLayout(ly_derecho, 1)
         tab.setLayout(layout_principal)
         return tab
 
-    def actualizar_monto_inicial_desde_conteo(self):
-        total = sum(int(e.text() or 0) * den for den, e in self.inputs_efectivo.items())
+    def ajustar_cantidad(self, den, delta):
+        """Incrementa o decrementa la cantidad de una denominación."""
+        try:
+            actual = int(self.inputs_cantidad[den].text() or 0)
+            nuevo = max(0, actual + delta)
+            self.inputs_cantidad[den].setText(str(nuevo))
+        except:
+            self.inputs_cantidad[den].setText("0")
+
+    def actualizar_totales_desde_conteo(self):
+        """Recalcula los subtotales y el total general del conteo actual."""
+        total = 0
+        for den, edit in self.inputs_cantidad.items():
+            try:
+                cantidad = int(edit.text() or 0)
+                subtotal = den * cantidad
+                self.labels_subtotal[den].setText(f"Q {subtotal:,.2f}")
+                total += subtotal
+            except:
+                self.labels_subtotal[den].setText("Q 0.00")
         self.lbl_total_conteo.setText(f"<b>TOTAL CONTEO: Q {total:,.2f}</b>")
-        self.monto_inicial_spin.setValue(total)
+        self.lbl_monto_inicial.setText(f"Q {total:,.2f}")
+        return total
+
+    def obtener_detalles_conteo(self):
+        """Devuelve lista de (denominacion, cantidad, subtotal) y total."""
+        detalles = []
+        total = 0
+        for den, edit in self.inputs_cantidad.items():
+            cant = int(edit.text() or 0)
+            if cant > 0:
+                subtotal = den * cant
+                detalles.append((den, cant, subtotal))
+                total += subtotal
+        return detalles, total
 
     def abrir_caja(self):
-        monto = self.monto_inicial_spin.value()
-        if monto <= 0:
-            QMessageBox.warning(self, "Error", "El monto inicial debe ser mayor a cero")
-            return
-
-        # Verificar si ya hay un turno activo
+        """Abre un nuevo turno usando el conteo actual."""
         if self.id_apertura_actual is not None:
             QMessageBox.warning(self, "Error", "Ya hay un turno abierto. Debe cerrarlo antes de abrir otro.")
             return
 
-        # Obtener o crear la caja del día (fecha actual)
+        detalles, total = self.obtener_detalles_conteo()
+        if total <= 0:
+            QMessageBox.warning(self, "Error", "El monto inicial debe ser mayor a cero.")
+            return
+
+        # Obtener o crear caja del día
         fecha_hoy = datetime.now().date()
         caja = self.db.fetch_one("SELECT id_caja FROM caja WHERE fecha = %s", (fecha_hoy,))
         if not caja:
             caja = self.db.fetch_one("INSERT INTO caja (fecha) VALUES (%s) RETURNING id_caja", (fecha_hoy,))
             if not caja:
-                QMessageBox.critical(self, "Error", "No se pudo crear la caja del día")
+                QMessageBox.critical(self, "Error", "No se pudo crear la caja del día.")
                 return
         id_caja = caja['id_caja']
 
-        # Detalles del conteo
-        detalles = [(den, int(edit.text() or 0), den * int(edit.text() or 0))
-                    for den, edit in self.inputs_efectivo.items() if int(edit.text() or 0) > 0]
-
-        # Insertar nueva apertura (turno) con estado 'ABIERTO'
+        # Insertar nueva apertura
         apertura_result = self.db.fetch_one("""
             INSERT INTO apertura_cierre 
             (id_caja_fk, id_usuario_fk, fecha_hora_apertura, monto_inicial, estado, observacion_apertura)
             VALUES (%s, %s, NOW(), %s, 'ABIERTO', %s)
             RETURNING id_apertura
-        """, (id_caja, self.usuario_data['id_usuario'], monto, "Apertura de turno"))
+        """, (id_caja, self.usuario_data['id_usuario'], total, "Apertura con conteo"))
 
         if not apertura_result:
-            QMessageBox.critical(self, "Error", "No se pudo abrir el turno")
+            QMessageBox.critical(self, "Error", "No se pudo abrir el turno.")
             return
 
         id_apertura = apertura_result['id_apertura']
@@ -271,21 +272,16 @@ class VentanaCaja(QWidget):
                 VALUES (%s, %s, %s, %s)
             """, (id_apertura, den, cant, subtotal))
 
-        QMessageBox.information(self, "Éxito", f"Turno abierto correctamente con Q {monto:,.2f}")
+        QMessageBox.information(self, "Éxito", f"Turno abierto correctamente con Q {total:,.2f}")
         self.verificar_estado_caja()
 
     def cerrar_caja(self):
+        """Cierra el turno actual usando el conteo actual (actualizado por el cajero)."""
         if not self.id_apertura_actual:
-            QMessageBox.warning(self, "Error", "No hay un turno abierto para cerrar")
+            QMessageBox.warning(self, "Error", "No hay un turno abierto para cerrar.")
             return
 
-        # Mostrar diálogo de conteo de efectivo
-        dialog = DialogoConteoEfectivo("Conteo de efectivo para CIERRE", self)
-        if dialog.exec_() != QDialog.Accepted:
-            return
-
-        monto_contado = dialog.get_total()
-        detalles_cierre = dialog.get_detalles()
+        detalles_cierre, monto_contado = self.obtener_detalles_conteo()
 
         # Calcular efectivo esperado
         query = """
@@ -347,7 +343,7 @@ class VentanaCaja(QWidget):
         )
 
         if not exito:
-            QMessageBox.critical(self, "Error", "No se pudo cerrar el turno")
+            QMessageBox.critical(self, "Error", "No se pudo cerrar el turno.")
             return
 
         # Guardar detalles de cierre
@@ -365,7 +361,7 @@ class VentanaCaja(QWidget):
         tab = QWidget()
         layout = QVBoxLayout()
 
-        # Panel de resumen del turno
+        # Panel de resumen del turno (igual que antes)
         resumen_group = QGroupBox("Resumen del Turno Actual")
         resumen_group.setStyleSheet("""
             QGroupBox {
@@ -412,7 +408,7 @@ class VentanaCaja(QWidget):
         resumen_group.setLayout(resumen_layout)
         layout.addWidget(resumen_group)
 
-        # Formulario para registrar movimientos manuales
+        # Formulario para registrar movimientos manuales (igual que antes)
         form_group = QGroupBox("Registrar Movimiento Manual")
         form_group.setStyleSheet("""
             QGroupBox {
@@ -446,8 +442,7 @@ class VentanaCaja(QWidget):
         form_layout.addRow("Monto:", self.monto_mov)
 
         registrar_btn = QPushButton("Registrar Movimiento")
-        registrar_btn.setStyleSheet(
-            "background-color: #F5C800; border: none; border-radius: 8px; padding: 10px; font-weight: bold;")
+        registrar_btn.setStyleSheet("background-color: #F5C800; border: none; border-radius: 8px; padding: 10px; font-weight: bold;")
         registrar_btn.clicked.connect(self.registrar_movimiento)
         form_layout.addRow(registrar_btn)
 
@@ -460,6 +455,12 @@ class VentanaCaja(QWidget):
         self.movimientos_table.setHorizontalHeaderLabels(["Fecha", "Tipo", "Descripción", "Monto", "Usuario"])
         self.movimientos_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.movimientos_table)
+
+        # Botón exportar turno
+        btn_exportar_turno = QPushButton("Exportar turno actual a Excel")
+        btn_exportar_turno.clicked.connect(self.exportar_turno)
+        btn_exportar_turno.setStyleSheet("background-color: #F5C800; border-radius: 8px; padding: 6px;")
+        layout.addWidget(btn_exportar_turno)
 
         tab.setLayout(layout)
         return tab
@@ -481,7 +482,6 @@ class VentanaCaja(QWidget):
             QMessageBox.warning(self, "Error", "Complete todos los campos correctamente")
             return
 
-        # Insertar movimiento
         query_mov = """
             INSERT INTO movimiento_caja (id_caja_fk, tipo_movimiento, descripcion, monto, fecha_hora, id_usuario_fk)
             VALUES (%s, %s, %s, %s, NOW(), %s) RETURNING id_movimiento
@@ -492,7 +492,6 @@ class VentanaCaja(QWidget):
             QMessageBox.critical(self, "Error", "No se pudo registrar el movimiento")
             return
 
-        # Si es egreso, insertar en gasto
         if tipo == "EGRESO":
             query_gasto = """
                 INSERT INTO gasto (id_movimiento_fk, tipo_gasto, descripcion, monto)
@@ -547,14 +546,23 @@ class VentanaCaja(QWidget):
             self.monto_inicial_actual = float(resultado['monto_inicial'])
             self.caja_abierta_signal.emit(self.id_caja_actual)
 
+            # Cargar los datos de apertura en los campos de conteo (para que el cajero los vea al cerrar)
+            detalles_apertura = self.db.fetch_all("""
+                SELECT denominacion, cantidad FROM detalle_apertura WHERE id_apertura_fk = %s
+            """, (self.id_apertura_actual,))
+            for det in detalles_apertura:
+                den = det['denominacion']
+                if den in self.inputs_cantidad:
+                    self.inputs_cantidad[den].setText(str(det['cantidad']))
+            self.actualizar_totales_desde_conteo()
+
             self.estado_frame.setText(
                 f" TURNO ABIERTO\n"
                 f"Usuario: {resultado['usuario_nombre']}\n"
                 f"Monto inicial: Q {self.monto_inicial_actual:,.2f}\n"
                 f"Apertura: {resultado['fecha_hora_apertura']}"
             )
-            self.estado_frame.setStyleSheet(
-                "background-color: #D1FAE5; color: #059669; border-radius: 10px; padding: 15px;")
+            self.estado_frame.setStyleSheet("background-color: #D1FAE5; color: #059669; border-radius: 10px; padding: 15px;")
             self.apertura_btn.setEnabled(False)
             self.cierre_btn.setEnabled(True)
             self.cargar_movimientos()
@@ -563,8 +571,12 @@ class VentanaCaja(QWidget):
             self.id_apertura_actual = None
             self.id_caja_actual = None
             self.monto_inicial_actual = 0
+            # Limpiar los campos de conteo (para apertura)
+            for den, edit in self.inputs_cantidad.items():
+                edit.setText("0")
+            self.actualizar_totales_desde_conteo()
 
-            # Obtener último cierre con sus denominaciones
+            # Obtener último cierre
             ultimo_cierre = self.db.fetch_one("""
                 SELECT ac.monto_final, ac.fecha_hora_cierre, u.nombre as usuario_nombre
                 FROM apertura_cierre ac
@@ -593,13 +605,11 @@ class VentanaCaja(QWidget):
                 if hasattr(self, 'btn_den_cierre'):
                     self.btn_den_cierre.hide()
 
-            self.estado_frame.setStyleSheet(
-                "background-color: #FEE2E2; color: #DC2626; border-radius: 10px; padding: 15px;")
+            self.estado_frame.setStyleSheet("background-color: #FEE2E2; color: #DC2626; border-radius: 10px; padding: 15px;")
             self.apertura_btn.setEnabled(True)
             self.cierre_btn.setEnabled(False)
             self.cargar_historial()
             self.actualizar_resumen_turno()
-            # Limpiar tabla de movimientos
             self.movimientos_table.setRowCount(0)
 
     def ver_denominaciones_ultimo_cierre(self):
@@ -642,7 +652,6 @@ class VentanaCaja(QWidget):
             self.movimientos_table.setItem(i, 2, QTableWidgetItem(m['descripcion']))
             self.movimientos_table.setItem(i, 3, QTableWidgetItem(f"Q {float(m['monto']):,.2f}"))
             self.movimientos_table.setItem(i, 4, QTableWidgetItem(m['nombre']))
-
         self.actualizar_resumen_turno()
 
     def actualizar_resumen_turno(self):
@@ -711,3 +720,36 @@ class VentanaCaja(QWidget):
             self.historial_table.setItem(i, 6, QTableWidgetItem(final))
             diff = f"Q {float(h['diferencia']):,.2f}" if h['diferencia'] is not None else "-"
             self.historial_table.setItem(i, 7, QTableWidgetItem(diff))
+
+    def exportar_turno(self):
+        if not self.id_apertura_actual:
+            QMessageBox.warning(self, "Sin turno", "No hay un turno abierto.")
+            return
+        from services.reporte_service import ReporteService
+        rs = ReporteService()
+        movimientos = rs.obtener_movimientos_turno(self.id_apertura_actual)
+        if not movimientos:
+            QMessageBox.warning(self, "Sin movimientos", "No hay movimientos en este turno.")
+            return
+        import openpyxl
+        from openpyxl.styles import Font
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = f"Turno_{self.id_apertura_actual}"
+        ws['A1'] = "Reporte de turno"
+        ws['A3'] = "Fecha/Hora"
+        ws['B3'] = "Tipo"
+        ws['C3'] = "Descripción"
+        ws['D3'] = "Monto"
+        ws['E3'] = "Usuario"
+        for i, m in enumerate(movimientos, start=4):
+            ws.cell(row=i, column=1, value=str(m['fecha_hora']))
+            ws.cell(row=i, column=2, value=m['tipo_movimiento'])
+            ws.cell(row=i, column=3, value=m['descripcion'])
+            ws.cell(row=i, column=4, value=float(m['monto']))
+            ws.cell(row=i, column=5, value=m['usuario_nombre'])
+        from PyQt5.QtWidgets import QFileDialog
+        ruta, _ = QFileDialog.getSaveFileName(self, "Guardar turno", f"Turno_{self.id_apertura_actual}.xlsx", "Excel files (*.xlsx)")
+        if ruta:
+            wb.save(ruta)
+            QMessageBox.information(self, "Éxito", "Turno exportado")
