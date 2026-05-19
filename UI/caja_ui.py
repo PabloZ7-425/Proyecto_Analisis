@@ -87,7 +87,7 @@ class VentanaCaja(QWidget):
             QTabWidget::pane { border: 1px solid #E5E7EB; border-radius: 12px; background-color: white; }
             QTabBar::tab:selected { background-color: #F5C800; border-radius: 8px; padding: 10px 20px; font-weight: bold; }
         """)
-        self.tabs.addTab(self.crear_tab_apertura_cierre(), "Apertura / Cierre")
+        self.tabs.addTab(self.crear_tab_apertura_cierre(), "Control")
         self.tabs.addTab(self.crear_tab_movimientos(), "Movimientos y Resumen")
         self.tabs.addTab(self.crear_tab_historial(), "Historial")
 
